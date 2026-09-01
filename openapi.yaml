@@ -1,0 +1,293 @@
+openapi: 3.0.3
+info:
+  title: Seal Web App API
+  version: "1.0.0"
+  description: |
+    REST API for the Seal Web App yt-dlp downloader.
+
+    Import this file into Insomnia (Create > Import From > File) or Postman.
+
+    IMPORTANT: download progress is delivered over Socket.IO, not REST.
+    `POST /api/download` returns immediately with a downloadId and the transfer
+    continues in the background. To observe completion from a REST client,
+    poll `GET /api/download/list` until the file appears.
+
+    Verified against a live server on 27 Aug 2026 with yt-dlp 2026.08.19.
+servers:
+  - url: http://localhost:5000
+    description: Local development server
+
+tags:
+  - name: download
+  - name: info
+  - name: formats
+
+paths:
+  /api/download:
+    post:
+      tags: [download]
+      summary: Start a download (returns immediately, ~20 ms)
+      description: |
+        Spawns a yt-dlp process and returns at once. The response only confirms
+        the process started; it does NOT mean the file is ready. There is no
+        concurrency limit, so each call spawns another process (~54 MB each).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url:
+                  type: string
+                  description: Any URL yt-dlp supports. Must start with http:// or https://
+                  example: https://streamable.com/moo
+                quality:
+                  type: string
+                  description: |
+                    Max height in pixels, or "best". Maps to -f best[height<=N]/best.
+                    NOTE: this selector only matches pre-merged files, so DASH-only
+                    platforms (Reddit, BiliBili, YouTube) fail with
+                    "Requested format is not available".
+                  example: "360"
+                audioOnly:
+                  type: boolean
+                  description: Extract audio. Requires ffmpeg unless the source is already encoded.
+                  example: false
+                format:
+                  type: string
+                  description: Audio format when audioOnly is true (mp3, m4a, flac, wav, ogg).
+                  example: mp3
+            examples:
+              video360:
+                summary: Video at 360p
+                value: { url: "https://streamable.com/moo", quality: "360", audioOnly: false }
+              audioMp3:
+                summary: Audio only as MP3 (needs ffmpeg)
+                value: { url: "https://streamable.com/moo", audioOnly: true, format: "mp3" }
+      responses:
+        "200":
+          description: Download started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  downloadId: { type: string, example: "1787841040153" }
+                  message: { type: string, example: "Download started" }
+        "400":
+          description: Missing or malformed URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string, example: "Invalid URL format. Please provide a valid HTTP/HTTPS URL." }
+        "500":
+          description: Server error
+
+  /api/download/list:
+    get:
+      tags: [download]
+      summary: List downloaded files
+      description: Poll this after POST /api/download to detect completion.
+      responses:
+        "200":
+          description: Array of files currently in downloads/
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name: { type: string, example: "me irl.mp4" }
+                    size: { type: integer, example: 3044857 }
+                    createdAt: { type: string, format: date-time }
+                    modifiedAt: { type: string, format: date-time }
+        "500":
+          description: Failed to list files
+
+  /api/download/{filename}:
+    delete:
+      tags: [download]
+      summary: Delete a downloaded file
+      description: |
+        URL-encode the filename. Downloaded names often contain spaces and
+        non-ASCII characters, e.g. "me irl.mp4" becomes "me%20irl.mp4".
+
+        SECURITY: the path guard is ineffective. path.join collapses ../ before
+        the startsWith check runs, so a crafted filename can delete files
+        outside downloads/. Do not expose this endpoint publicly.
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema: { type: string }
+          example: me%20irl.mp4
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  message: { type: string, example: "File deleted successfully" }
+        "400":
+          description: Invalid file path
+        "500":
+          description: Delete failed
+
+  /api/info:
+    get:
+      tags: [info]
+      summary: Get video metadata
+      description: |
+        Runs yt-dlp --dump-json. Slow: ~5 s for a simple host, 45-85 s for
+        YouTube without a JS runtime. Raise your client timeout accordingly.
+
+        KNOWN BUG: returns HTTP 500 for multi-video posts (e.g. Instagram
+        carousels). --dump-json emits one JSON object per line and the route
+        passes the whole buffer to a single JSON.parse.
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema: { type: string }
+          example: https://streamable.com/moo
+      responses:
+        "200":
+          description: Metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, example: moo }
+                  title: { type: string, example: me irl }
+                  description: { type: string }
+                  duration: { type: number, example: 12 }
+                  uploader: { type: string, nullable: true }
+                  upload_date: { type: string, example: "20150311" }
+                  view_count: { type: integer }
+                  thumbnail: { type: string }
+                  webpage_url: { type: string }
+                  extractor: { type: string }
+                  formats:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        format_id: { type: string }
+                        ext: { type: string }
+                        height: { type: integer, nullable: true }
+                        vcodec: { type: string }
+                        acodec: { type: string }
+        "400":
+          description: URL parameter is required
+        "500":
+          description: Extraction failed, or JSON parse error on multi-video posts
+
+  /api/info/playlist:
+    get:
+      tags: [info]
+      summary: Get playlist entries
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema: { type: string }
+          example: https://streamable.com/moo
+      responses:
+        "200":
+          description: Playlist entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        title: { type: string }
+                        url: { type: string }
+        "400":
+          description: URL parameter is required
+        "500":
+          description: Extraction failed
+
+  /api/formats:
+    get:
+      tags: [formats]
+      summary: List available formats (CURRENTLY BROKEN)
+      description: |
+        BROKEN: always returns HTTP 200 with three empty arrays.
+
+        The route parses the human-readable --list-formats table and looks for a
+        header containing "format code" and "extension", which is the old
+        youtube-dl header. Modern yt-dlp prints
+        "ID  EXT RESOLUTION | PROTO | VCODEC  ACODEC", so parsing never starts.
+
+        Use GET /api/info instead: its formats array is populated correctly.
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema: { type: string }
+          example: https://streamable.com/moo
+      responses:
+        "200":
+          description: Always empty arrays in the current build
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  video_formats: { type: array, items: { type: object } }
+                  audio_formats: { type: array, items: { type: object } }
+                  all_formats: { type: array, items: { type: object } }
+              example:
+                video_formats: []
+                audio_formats: []
+                all_formats: []
+        "400":
+          description: URL parameter is required
+        "500":
+          description: Extraction failed
+
+  /api/formats/quality-presets:
+    get:
+      tags: [formats]
+      summary: Get quality and audio presets
+      description: Static data, no yt-dlp call. Fastest endpoint (~15 ms). Good for a health check.
+      responses:
+        "200":
+          description: Presets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  video:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        value: { type: string, example: "1080" }
+                        label: { type: string, example: "Full HD (1080p)" }
+                        description: { type: string, example: "High Definition" }
+                  audio:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        value: { type: string, example: mp3 }
+                        label: { type: string, example: MP3 }
+                        description: { type: string, example: "Standard audio format" }

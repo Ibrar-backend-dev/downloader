@@ -1,35 +1,72 @@
 const express = require('express');
-const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs-extra');
+const { getGenericDownloadError, isTransientFailure } = require('../utils/downloadError');
+const { createLogger } = require('../utils/logger');
+const { createTracer } = require('../utils/ytdlpTrace');
+const { spawnYtDlp } = require('../utils/ytdlpProcess');
+const { isTikTokUrl, accessArgs } = require('../utils/ytdlpAccess');
 const router = express.Router();
+
+// TikTok rejects roughly a third of extraction attempts with a challenge that
+// clears on a retry, so a single attempt is not a fair test of availability.
+const MAX_ATTEMPTS = Number(process.env.YTDLP_MAX_ATTEMPTS || 3);
+const RETRY_DELAY_MS = Number(process.env.YTDLP_RETRY_DELAY_MS || 2000);
 
 // POST /api/download
 router.post('/', async (req, res) => {
+  const downloadId = Date.now().toString();
+  const log = createLogger('download', downloadId);
+
   try {
     const { url, format, quality, audioOnly, outputPath } = req.body;
     const io = req.app.get('socketio');
 
+    log.info('request.received', {
+      url,
+      format,
+      quality,
+      audioOnly: Boolean(audioOnly),
+      outputPath,
+      ip: req.ip,
+    });
+
     if (!url) {
+      log.warn('validate.rejected', { reason: 'missing-url' });
       return res.status(400).json({ error: 'URL is required' });
     }
 
     // Basic URL validation - let yt-dlp handle specific format validation
     const urlPattern = /^https?:\/\/.+/i;
     if (!urlPattern.test(url)) {
+      log.warn('validate.rejected', { reason: 'bad-url-format', url });
       return res.status(400).json({ error: 'Invalid URL format. Please provide a valid HTTP/HTTPS URL.' });
     }
 
+    const tiktok = isTikTokUrl(url);
+    log.info('validate.passed', {
+      tiktok,
+      cookiesFromBrowser: process.env.YTDLP_COOKIES_FROM_BROWSER || null,
+      cookiesFile: process.env.YTDLP_COOKIES_FILE || null,
+    });
+
     const downloadsDir = path.join(__dirname, '../../downloads');
     await fs.ensureDir(downloadsDir);
+    log.debug('downloads.dir-ready', { downloadsDir });
 
     // Build yt-dlp command with better YouTube handling
     const args = [];
     
-    // Add user agent and headers to bypass some restrictions
-    args.push('--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
-    args.push('--add-header', 'Accept-Language:en-US,en;q=0.9');
-    
+    // Add user agent and headers to bypass some restrictions. TikTok needs a
+    // stricter set (matching TLS fingerprint, cookies), which accessArgs
+    // supplies -- including its own user agent, so don't send one twice.
+    if (isTikTokUrl(url)) {
+      args.push(...(await accessArgs(url, log)));
+    } else {
+      args.push('--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36');
+      args.push('--add-header', 'Accept-Language:en-US,en;q=0.9');
+    }
+
     if (audioOnly) {
       args.push('-f', 'bestaudio/best');
       args.push('--extract-audio');
@@ -46,12 +83,13 @@ router.post('/', async (req, res) => {
     args.push('-o', path.join(downloadsDir, '%(title)s.%(ext)s'));
     args.push('--no-playlist');
     args.push('--progress');
+    // One progress update per line instead of carriage-return rewrites, so the
+    // trace keeps every tick rather than a single overwritten line.
+    args.push('--newline');
+    if (process.env.YTDLP_VERBOSE === '1') args.push('--verbose');
     args.push(url);
 
-    const downloadId = Date.now().toString();
-    
-    // Spawn yt-dlp process
-    const ytdlp = spawn('yt-dlp', args);
+    log.info('ytdlp.args', { argv: args });
 
     let downloadInfo = {
       id: downloadId,
@@ -64,45 +102,157 @@ router.post('/', async (req, res) => {
 
     io.emit('download-start', downloadInfo);
 
-    ytdlp.stdout.on('data', (data) => {
-      const output = data.toString();
-      console.log('yt-dlp stdout:', output);
-      
-      // Parse progress information
-      const progressMatch = output.match(/(\d+\.\d+)%/);
-      if (progressMatch) {
-        downloadInfo.progress = parseFloat(progressMatch[1]);
-        downloadInfo.status = 'downloading';
-        io.emit('download-progress', downloadInfo);
-      }
-      
-      // Extract filename
-      const filenameMatch = output.match(/\[download\] Destination: (.+)/);
-      if (filenameMatch) {
-        downloadInfo.filename = path.basename(filenameMatch[1]);
-      }
+    // One yt-dlp run. Resolves with everything needed to decide whether the
+    // failure is worth another attempt.
+    const runAttempt = (attempt) => new Promise((resolve) => {
+      const attemptLog = log.child(`try${attempt}`);
+      const spawnedAt = Date.now();
+      let rawYtDlpError = '';
+      let spawnFailed = null;
+
+      const tracer = createTracer({
+        logger: attemptLog,
+        onProgress: (tick) => {
+          downloadInfo.progress = tick.percent;
+          downloadInfo.status = 'downloading';
+          io.emit('download-progress', downloadInfo);
+        },
+      });
+
+      attemptLog.info('attempt.start', { attempt, of: MAX_ATTEMPTS });
+      const ytdlp = spawnYtDlp(args);
+      attemptLog.info('ytdlp.spawned', { pid: ytdlp.pid });
+
+      ytdlp.stdout.on('data', (data) => tracer.feedStdout(data));
+
+      ytdlp.stderr.on('data', (data) => {
+        rawYtDlpError += data.toString();
+        tracer.feedStderr(data);
+      });
+
+      ytdlp.on('error', (error) => {
+        spawnFailed = error;
+        rawYtDlpError = error.message;
+        attemptLog.error('ytdlp.spawn-failed', {
+          code: error.code,
+          message: error.message,
+          hint: error.code === 'ENOENT' ? 'yt-dlp is not on the server PATH' : undefined,
+        });
+      });
+
+      ytdlp.on('close', async (code, signal) => {
+        tracer.flush();
+        const state = tracer.snapshot();
+        const durationMs = Date.now() - spawnedAt;
+
+        if (state.destination) downloadInfo.filename = path.basename(state.destination);
+
+        // Trust the file on disk over the exit code: a zero exit with no output
+        // file is still a failure from the user's point of view.
+        let fileSize = null;
+        if (state.destination) {
+          try {
+            fileSize = (await fs.stat(state.destination)).size;
+          } catch (statError) {
+            fileSize = null;
+          }
+        }
+
+        attemptLog.info('ytdlp.exited', {
+          code,
+          signal,
+          durationMs,
+          furthestStage: state.furthestStage,
+          percent: state.percent,
+          extractor: state.extractor,
+          formats: state.formats,
+          file: downloadInfo.filename || null,
+          fileSize,
+          warnings: state.warnings.length,
+          errors: state.errors.length,
+        });
+
+        resolve({
+          ok: code === 0 && !spawnFailed,
+          code,
+          signal,
+          durationMs,
+          fileSize,
+          state,
+          rawYtDlpError,
+          spawnFailed,
+          diagnosis: tracer.describeFailure(code),
+        });
+      });
     });
 
-    ytdlp.stderr.on('data', (data) => {
-      const error = data.toString();
-      console.error('yt-dlp stderr:', error);
-      downloadInfo.error = error;
-      downloadInfo.status = 'error';
-      io.emit('download-error', downloadInfo);
-    });
+    // Run attempts in the background; the client already has its 202-style ack
+    // and follows the job over the socket.
+    (async () => {
+      let result = null;
 
-    ytdlp.on('close', (code) => {
-      if (code === 0) {
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        result = await runAttempt(attempt);
+        if (result.ok) break;
+
+        const retryable = !result.spawnFailed && isTransientFailure(result.rawYtDlpError);
+        if (!retryable || attempt === MAX_ATTEMPTS) {
+          log.warn('retry.stopped', {
+            attempt,
+            reason: result.spawnFailed
+              ? 'yt-dlp could not be started'
+              : retryable
+                ? 'attempts exhausted'
+                : 'failure is not transient',
+          });
+          break;
+        }
+
+        log.warn('retry.scheduled', {
+          afterAttempt: attempt,
+          delayMs: RETRY_DELAY_MS,
+          because: result.diagnosis,
+        });
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      }
+
+      if (result.ok) {
         downloadInfo.status = 'completed';
         downloadInfo.progress = 100;
+        downloadInfo.error = null;
         io.emit('download-complete', downloadInfo);
-      } else {
-        downloadInfo.status = 'error';
-        downloadInfo.error = `Process exited with code ${code}`;
-        io.emit('download-error', downloadInfo);
+        log.info('download.completed', {
+          file: downloadInfo.filename,
+          fileSize: result.fileSize,
+          totalMs: log.elapsed(),
+        });
+        return;
       }
-    });
 
+      const genericError = getGenericDownloadError(url, result.rawYtDlpError, result.code);
+      downloadInfo.status = 'error';
+      downloadInfo.error = genericError;
+      io.emit('download-error', downloadInfo);
+
+      log.error('download.failed', {
+        diagnosis: result.diagnosis,
+        exitCode: result.code,
+        signal: result.signal,
+        totalMs: log.elapsed(),
+        furthestStage: result.state.furthestStage,
+        percentReached: result.state.percent,
+        sawFirstByte: result.state.sawFirstByte,
+        extractor: result.state.extractor,
+        formats: result.state.formats,
+        destination: result.state.destination,
+        ytdlpErrors: result.state.errors,
+        ytdlpWarnings: result.state.warnings,
+        lastLine: result.state.lastLine,
+        userFacingError: genericError,
+      });
+    })();
+
+    log.info('response.sent', { downloadId, status: 'accepted' });
     res.json({
       success: true,
       downloadId,
@@ -110,10 +260,10 @@ router.post('/', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Download error:', error);
-    res.status(500).json({ 
+    log.error('route.exception', { message: error.message, stack: error.stack });
+    res.status(500).json({
       error: 'Download failed',
-      details: error.message 
+      details: error.message
     });
   }
 });

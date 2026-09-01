@@ -1,0 +1,272 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-08-29T11:40:00.000Z",
+  "__export_source": "seal-web-app:api-tests",
+  "resources": [
+    {
+      "_id": "wrk_seal",
+      "_type": "workspace",
+      "parentId": null,
+      "name": "Seal Web App API",
+      "description": "Tested against a live server on 29 Aug 2026 with yt-dlp 2026.08.19, ffmpeg 9.0.1, curl_cffi 0.16.2.\n\nStart the server first:  node server/index.js   (port 5000)\n\nIMPORTANT: raise the request timeout in Insomnia (Preferences > General > Request Timeout) to at least 300000 ms. /api/resolve takes ~5 s on most platforms but ~106 s on YouTube, and the default timeout will abort it.",
+      "scope": "collection"
+    },
+    {
+      "_id": "env_base",
+      "_type": "environment",
+      "parentId": "wrk_seal",
+      "name": "Local",
+      "data": {
+        "base": "http://localhost:5000",
+        "quality": "360",
+        "url_streamable": "https://streamable.com/moo",
+        "url_reddit": "https://www.reddit.com/r/videos/comments/6rrwyj/that_small_heart_attack/",
+        "url_youtube": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+        "url_dailymotion": "https://www.dailymotion.com/video/xb15rv6",
+        "url_instagram": "https://www.instagram.com/p/BQ0eAlwhDrw/",
+        "url_bilibili": "http://www.bilibili.com/video/av328441986",
+        "url_pinterest": "https://www.pinterest.com/pin/664281013778109217/",
+        "url_archive": "https://archive.org/details/Cops1922",
+        "url_tiktok": "https://www.tiktok.com/@patroxofficial/video/6742501081818877190"
+      },
+      "metaSortKey": 1
+    },
+
+    { "_id": "fld_health", "_type": "request_group", "parentId": "wrk_seal", "name": "1 - Health", "description": "Start here. Confirms the server is up without touching yt-dlp.", "metaSortKey": 100 },
+    {
+      "_id": "req_presets",
+      "_type": "request",
+      "parentId": "fld_health",
+      "name": "Quality presets (health check)",
+      "method": "GET",
+      "url": "{{ _.base }}/api/formats/quality-presets",
+      "description": "NEEDS: nothing. No parameters, no body, no auth.\n\nRETURNS: 200 with static preset lists.\n{\n  \"video\": [{ \"value\": \"1080\", \"label\": \"Full HD (1080p)\", \"description\": \"...\" }, ...8 items],\n  \"audio\": [{ \"value\": \"mp3\", \"label\": \"MP3\", \"description\": \"...\" }, ...6 items]\n}\n\nSPEED: ~15 ms. No yt-dlp process is spawned, so this is the correct health check.",
+      "headers": [],
+      "metaSortKey": 101
+    },
+
+    { "_id": "fld_resolve", "_type": "request_group", "parentId": "wrk_seal", "name": "2 - Resolve + Stream (recommended)", "description": "The two-step flow. /api/resolve says WHAT to download; /api/stream delivers it. Nothing is written to server disk.", "metaSortKey": 200 },
+    {
+      "_id": "req_resolve",
+      "_type": "request",
+      "parentId": "fld_resolve",
+      "name": "Resolve - Streamable (no merge)",
+      "method": "GET",
+      "url": "{{ _.base }}/api/resolve",
+      "description": "NEEDS:\n  url      (query, required) - any http(s) page URL yt-dlp supports\n  quality  (query, optional) - max height in px, or 'best'. Default 360.\n\nRETURNS 200:\n{\n  \"title\": \"me irl\",\n  \"extractor\": \"Streamable\",\n  \"count\": 1,\n  \"downloads\": [{\n    \"filename\": \"me irl.mp4\",\n    \"ext\": \"mp4\",\n    \"needsMerge\": false,\n    \"duration\": 12,\n    \"url\": \"/api/stream?url=...&index=0&name=me%20irl.mp4\"\n  }]\n}\n\nKEY FIELDS:\n  needsMerge=false -> single progressive file, native extension kept (.mp4/.mp3)\n  needsMerge=true  -> video+audio merged by ffmpeg, extension becomes .mkv\n  count            -> number of downloadable items. Always loop over downloads[].\n  downloads[].url  -> relative path. Prefix with the base URL to fetch.\n\nERRORS:\n  400 { \"error\": \"Invalid URL format...\" }        - url missing or not http(s)\n  502 { \"error\": \"Extraction failed\", \"details\": \"...\" } - platform blocked or URL dead\n\nSPEED: ~3-5 s typical. No media is transferred at this step.",
+      "parameters": [
+        { "name": "url", "value": "{{ _.url_streamable }}" },
+        { "name": "quality", "value": "{{ _.quality }}" }
+      ],
+      "headers": [],
+      "metaSortKey": 201
+    },
+    {
+      "_id": "req_resolve_reddit",
+      "_type": "request",
+      "parentId": "fld_resolve",
+      "name": "Resolve - Reddit (needs merge)",
+      "method": "GET",
+      "url": "{{ _.base }}/api/resolve",
+      "description": "NEEDS: url, quality (same as above).\n\nRETURNS 200 with needsMerge=true and ext=mkv:\n{\n  \"title\": \"That small heart attack.\",\n  \"extractor\": \"Reddit\",\n  \"count\": 1,\n  \"downloads\": [{ \"filename\": \"That small heart attack..mkv\", \"ext\": \"mkv\", \"needsMerge\": true, ... }]\n}\n\nWHY IT DIFFERS: Reddit serves video and audio as two separate DASH streams. There is no single link to hand a browser, so the server merges them with ffmpeg. Extension becomes .mkv because MP4 cannot be written to a pipe (it needs to seek backwards to write its moov atom, and silently degrades to MPEG-TS).\n\nVERIFIED: streaming this yields 1,961,387 bytes, matroska container, h264 + aac.",
+      "parameters": [
+        { "name": "url", "value": "{{ _.url_reddit }}" },
+        { "name": "quality", "value": "{{ _.quality }}" }
+      ],
+      "headers": [],
+      "metaSortKey": 202
+    },
+    {
+      "_id": "req_stream",
+      "_type": "request",
+      "parentId": "fld_resolve",
+      "name": "Stream - download the file",
+      "method": "GET",
+      "url": "{{ _.base }}/api/stream",
+      "description": "NEEDS:\n  url      (query, required) - same page URL passed to /api/resolve\n  quality  (query, optional) - default 360\n  name     (query, optional) - filename sent back in Content-Disposition\n  index    (query, optional) - 0-based item for multi-video posts\n\nRETURNS 200: the raw media bytes.\n  Content-Type: application/octet-stream\n  Content-Disposition: attachment; filename=\"me irl.mp4\"; filename*=UTF-8''me%20irl.mp4\n\nThe filename* form carries non-ASCII titles correctly (real titles contain fullwidth quotes and similar).\n\nIN INSOMNIA: the response pane shows binary. Use the download-response button to save it to a file.\n\nDISK: nothing is written server-side. Verified downloads/ stayed at 0 items across a full stream.\n\nCANCELLING: closing the request kills the yt-dlp process, so aborted downloads do not orphan processes.\n\nERRORS:\n  400 plain text 'Invalid URL format.'\n  502 empty body - extraction or merge failed (check server console)\n\nVERIFY A MERGED FILE IS REAL (a corrupt merge still looks fine by byte count):\n  ffprobe -v error -show_entries stream=codec_name -of csv=p=0 out.mkv\n  expect both h264 and aac; video-only means the merge failed.",
+      "parameters": [
+        { "name": "url", "value": "{{ _.url_streamable }}" },
+        { "name": "quality", "value": "{{ _.quality }}" },
+        { "name": "name", "value": "me irl.mp4" }
+      ],
+      "headers": [],
+      "metaSortKey": 203
+    },
+
+    { "_id": "fld_platforms", "_type": "request_group", "parentId": "wrk_seal", "name": "3 - Resolve per platform", "description": "Verified status per platform on 29 Aug 2026. Swap the url parameter to test others.", "metaSortKey": 300 },
+    {
+      "_id": "req_p_youtube",
+      "_type": "request",
+      "parentId": "fld_platforms",
+      "name": "YouTube - WORKS (slow, ~106 s)",
+      "method": "GET",
+      "url": "{{ _.base }}/api/resolve",
+      "description": "STATUS: works. needsMerge=true, ext=mkv.\nVERIFIED stream: 24,420,197 bytes, audio + video.\n\nWARNING: resolve took 106 seconds. Raise the Insomnia timeout to 300000 ms or this looks like a hang.\n\nWHY SLOW: yt-dlp must solve YouTube's player JS challenge. It is much slower still from a datacenter IP, where bot checks are aggressive - expect this to be the least reliable platform in production.",
+      "parameters": [
+        { "name": "url", "value": "{{ _.url_youtube }}" },
+        { "name": "quality", "value": "{{ _.quality }}" }
+      ],
+      "headers": [],
+      "metaSortKey": 301
+    },
+    {
+      "_id": "req_p_dailymotion",
+      "_type": "request",
+      "parentId": "fld_platforms",
+      "name": "Dailymotion - WORKS",
+      "method": "GET",
+      "url": "{{ _.base }}/api/resolve",
+      "description": "STATUS: works.\nVERIFIED stream: 37,626,318 bytes, audio + video.\n\nNOTE: the raw platform URL is an .m3u8 playlist, not a video file. Handing that link to a browser saves a few KB of text. The server fetches and joins the segments, which is why the streamed result is a real file.",
+      "parameters": [
+        { "name": "url", "value": "{{ _.url_dailymotion }}" },
+        { "name": "quality", "value": "{{ _.quality }}" }
+      ],
+      "headers": [],
+      "metaSortKey": 302
+    },
+    {
+      "_id": "req_p_bilibili",
+      "_type": "request",
+      "parentId": "fld_platforms",
+      "name": "BiliBili - WORKS (403 for browsers)",
+      "method": "GET",
+      "url": "{{ _.base }}/api/resolve",
+      "description": "STATUS: works through the API.\nVERIFIED stream: 2,191,613 bytes, audio + video.\n\nWHY THE API IS REQUIRED HERE: BiliBili's CDN returns 403 to any request without a Referer header. A raw link is useless in a browser. yt-dlp sends the right header server-side, so routing through /api/stream is the only way this platform works at all.",
+      "parameters": [
+        { "name": "url", "value": "{{ _.url_bilibili }}" },
+        { "name": "quality", "value": "{{ _.quality }}" }
+      ],
+      "headers": [],
+      "metaSortKey": 303
+    },
+    {
+      "_id": "req_p_instagram",
+      "_type": "request",
+      "parentId": "fld_platforms",
+      "name": "Instagram - WORKS",
+      "method": "GET",
+      "url": "{{ _.base }}/api/resolve",
+      "description": "STATUS: works. needsMerge=false, ext=mp4.\n\nNOTE ON count: the route passes --no-playlist, so a carousel post collapses to the first video and count=1. The underlying post exposes 3 separate videos; drop --no-playlist in stream.js if you want all of them, and count becomes 3.\n\nSeparately, GET /api/info returns 500 on this URL - see the Legacy folder.",
+      "parameters": [
+        { "name": "url", "value": "{{ _.url_instagram }}" },
+        { "name": "quality", "value": "{{ _.quality }}" }
+      ],
+      "headers": [],
+      "metaSortKey": 304
+    },
+    {
+      "_id": "req_p_tiktok",
+      "_type": "request",
+      "parentId": "fld_platforms",
+      "name": "TikTok - FLAKY",
+      "method": "GET",
+      "url": "{{ _.base }}/api/resolve",
+      "description": "STATUS: intermittent. Resolve succeeded (ext=mp4, needsMerge=false) but streaming failed twice with:\n  ERROR: Unable to extract universal data for rehydration\n\nyt-dlp solves a JS challenge that sometimes works and sometimes does not - two direct runs succeeded (2,748,647 bytes) while two API runs returned 0 bytes. Retry before concluding it is broken.\n\nRequires curl_cffi, which is installed. Without it, TikTok fails immediately on TLS impersonation.",
+      "parameters": [
+        { "name": "url", "value": "{{ _.url_tiktok }}" },
+        { "name": "quality", "value": "{{ _.quality }}" }
+      ],
+      "headers": [],
+      "metaSortKey": 305
+    },
+    {
+      "_id": "req_p_facebook",
+      "_type": "request",
+      "parentId": "fld_platforms",
+      "name": "Facebook - FAILS (needs login)",
+      "method": "GET",
+      "url": "{{ _.base }}/api/resolve",
+      "description": "STATUS: fails.\n  502 { \"error\": \"Extraction failed\", \"details\": \"ERROR: [facebook] ...: Cannot parse data...\" }\n\nLogged-out scraping is blocked. This is the platform refusing, not a bug in the API. Fixing it requires passing session cookies (--cookies-from-browser), which is a real decision to weigh rather than a default.\n\nVimeo behaves similarly but differently: it resolves and streams 58 MB, yet the file contains audio only. yt-dlp reports 'Failed to parse XML: not well-formed' - an upstream extractor bug.",
+      "parameters": [
+        { "name": "url", "value": "https://www.facebook.com/radiokicksfm/videos/3676516585958356/" },
+        { "name": "quality", "value": "{{ _.quality }}" }
+      ],
+      "headers": [],
+      "metaSortKey": 306
+    },
+
+    { "_id": "fld_info", "_type": "request_group", "parentId": "wrk_seal", "name": "4 - Info", "description": "Metadata endpoints. Slow, because each spawns yt-dlp.", "metaSortKey": 400 },
+    {
+      "_id": "req_info",
+      "_type": "request",
+      "parentId": "fld_info",
+      "name": "Video info",
+      "method": "GET",
+      "url": "{{ _.base }}/api/info",
+      "description": "NEEDS: url (query, required).\n\nRETURNS 200:\n{ \"id\", \"title\", \"description\", \"duration\", \"uploader\", \"upload_date\", \"view_count\", \"thumbnail\", \"webpage_url\", \"extractor\",\n  \"formats\": [{ \"format_id\", \"ext\", \"quality\", \"filesize\", \"width\", \"height\", \"fps\", \"vcodec\", \"acodec\", \"format_note\" }] }\n\nSPEED: 5.1 s for Streamable, 45-85 s for YouTube.\n\nKNOWN BUG: returns 500 on multi-video posts such as Instagram carousels -\n  { \"error\": \"Failed to parse video information\", \"details\": \"Unexpected non-whitespace character after JSON at position 24016\" }\nCause: --dump-json emits one JSON object per line, and info.js passes the whole buffer to a single JSON.parse. /api/resolve handles this correctly.\n\nERRORS: 400 if url is missing.",
+      "parameters": [
+        { "name": "url", "value": "{{ _.url_streamable }}" }
+      ],
+      "headers": [],
+      "metaSortKey": 401
+    },
+    {
+      "_id": "req_info_pl",
+      "_type": "request",
+      "parentId": "fld_info",
+      "name": "Playlist info",
+      "method": "GET",
+      "url": "{{ _.base }}/api/info/playlist",
+      "description": "NEEDS: url (query, required).\n\nRETURNS 200: { \"entries\": [{ \"id\", \"title\", \"url\" }] }\nThe entry url is a direct CDN link and is often signed and short-lived, so do not store it.\n\nSPEED: ~4 s.",
+      "parameters": [
+        { "name": "url", "value": "{{ _.url_streamable }}" }
+      ],
+      "headers": [],
+      "metaSortKey": 402
+    },
+
+    { "_id": "fld_legacy", "_type": "request_group", "parentId": "wrk_seal", "name": "5 - Legacy (disk-based)", "description": "The original flow. Writes files to the server's downloads/ folder and never delivers them to the client. Superseded by Resolve + Stream.", "metaSortKey": 500 },
+    {
+      "_id": "req_dl",
+      "_type": "request",
+      "parentId": "fld_legacy",
+      "name": "Start download (async)",
+      "method": "POST",
+      "url": "{{ _.base }}/api/download",
+      "description": "NEEDS: JSON body.\n  url       (required) - http(s) URL\n  quality   (optional) - max height, e.g. \"360\"\n  audioOnly (optional) - boolean\n  format    (optional) - audio format when audioOnly is true\n\nRETURNS 200 IMMEDIATELY (~20 ms):\n  { \"success\": true, \"downloadId\": \"1787841040153\", \"message\": \"Download started\" }\n\nThis only confirms the process started. The file is NOT ready. Progress and completion are emitted over Socket.IO, which Insomnia cannot consume - poll 'List downloaded files' until the file appears.\n\nCAUTION: no concurrency limit. Every call spawns another yt-dlp process (~54 MB each).\n\nERRORS: 400 { \"error\": \"Invalid URL format...\" }",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"url\": \"https://streamable.com/moo\",\n  \"quality\": \"360\",\n  \"audioOnly\": false\n}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "metaSortKey": 501
+    },
+    {
+      "_id": "req_list",
+      "_type": "request",
+      "parentId": "fld_legacy",
+      "name": "List downloaded files",
+      "method": "GET",
+      "url": "{{ _.base }}/api/download/list",
+      "description": "NEEDS: nothing.\n\nRETURNS 200: [{ \"name\": \"me irl.mp4\", \"size\": 3044857, \"createdAt\": \"...\", \"modifiedAt\": \"...\" }]\nEmpty array when downloads/ is empty.\n\nPoll this after POST /api/download to detect completion.",
+      "headers": [],
+      "metaSortKey": 502
+    },
+    {
+      "_id": "req_del",
+      "_type": "request",
+      "parentId": "fld_legacy",
+      "name": "Delete a file",
+      "method": "DELETE",
+      "url": "{{ _.base }}/api/download/me%20irl.mp4",
+      "description": "NEEDS: filename in the path, URL-encoded. Downloaded names contain spaces and non-ASCII characters, so 'me irl.mp4' becomes 'me%20irl.mp4'.\n\nRETURNS 200: { \"success\": true, \"message\": \"File deleted successfully\" }\n\nSECURITY: the path guard does not work. path.join collapses ../ before the startsWith check, so a crafted filename deletes files outside downloads/. Do not expose this endpoint publicly.",
+      "headers": [],
+      "metaSortKey": 503
+    },
+    {
+      "_id": "req_formats",
+      "_type": "request",
+      "parentId": "fld_legacy",
+      "name": "List formats (BROKEN)",
+      "method": "GET",
+      "url": "{{ _.base }}/api/formats",
+      "description": "NEEDS: url (query, required).\n\nRETURNS 200 but always empty:\n  { \"video_formats\": [], \"audio_formats\": [], \"all_formats\": [] }\n\nCAUSE: the route parses the human-readable --list-formats table looking for a header containing 'format code' and 'extension' - the old youtube-dl header. Modern yt-dlp prints 'ID  EXT RESOLUTION | PROTO | VCODEC  ACODEC', so parsing never starts.\n\nUSE INSTEAD: GET /api/info, whose formats array is populated correctly.",
+      "parameters": [
+        { "name": "url", "value": "{{ _.url_streamable }}" }
+      ],
+      "headers": [],
+      "metaSortKey": 504
+    }
+  ]
+}

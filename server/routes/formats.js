@@ -1,5 +1,6 @@
 const express = require('express');
-const { spawn } = require('child_process');
+const { spawnYtDlp } = require('../utils/ytdlpProcess');
+const { accessArgs } = require('../utils/ytdlpAccess');
 const router = express.Router();
 
 // GET /api/formats?url=<video_url> - Get available formats for a video
@@ -20,10 +21,11 @@ router.get('/', async (req, res) => {
     const args = [
       '--list-formats',
       '--no-playlist',
+      ...(await accessArgs(url)),
       url
     ];
 
-    const ytdlp = spawn('yt-dlp', args);
+    const ytdlp = spawnYtDlp(args);
     let output = '';
     let error = '';
 

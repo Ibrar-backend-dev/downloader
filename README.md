@@ -159,11 +159,47 @@ The production server will serve the built React app and API on the same port (5
 
 ### Environment Variables
 
-Create a `.env` file in the root directory:
+Set these variables in the shell before starting the server:
 
-```env
-PORT=5000
-NODE_ENV=development
+```powershell
+$env:PORT = "5000"
+$env:NODE_ENV = "development"
+```
+
+For TikTok videos, TikTok may require a browser session to pass its anti-bot check. Set one of these before starting the server:
+
+```powershell
+$env:YTDLP_COOKIES_FROM_BROWSER = "chrome"
+```
+
+Alternatively, export cookies in Netscape format and configure the file path:
+
+```powershell
+$env:YTDLP_COOKIES_FILE = "C:\path\to\cookies.txt"
+```
+
+The browser option reads cookies from the local Chrome profile. Use the browser where you are signed in to TikTok, then restart the server before retrying.
+
+TikTok also fingerprints the TLS handshake, not just the request headers. When the
+`curl_cffi` package is installed the server automatically adds `--impersonate`, which
+is what stops TikTok from answering with a JS challenge that fails extraction before
+any video data is fetched. Install it with:
+
+```powershell
+pip install "yt-dlp[default,curl-cffi]"
+```
+
+The server logs `impersonation.available` or `impersonation.unavailable` at startup,
+so you can confirm which mode it is running in.
+
+These tune the engine's retry and logging behaviour:
+
+```powershell
+$env:LOG_LEVEL = "debug"            # error | warn | info | debug | trace
+$env:YTDLP_VERBOSE = "1"            # pass --verbose to yt-dlp
+$env:YTDLP_MAX_ATTEMPTS = "3"       # attempts per download before giving up
+$env:YTDLP_RETRY_DELAY_MS = "2000"  # pause between attempts
+$env:YTDLP_IMPERSONATE = "chrome"   # impersonation target
 ```
 
 ### Download Directory
@@ -209,6 +245,30 @@ For a complete list, run: `yt-dlp --list-extractors`
    - Check if the URL is supported
    - Verify internet connectivity
    - Some sites may require authentication
+
+4. **TikTok fails immediately at 0%:**
+   - Look for `Unable to extract universal data for rehydration` in the log. That is
+     TikTok's JS challenge, and it fails during extraction before any bytes are
+     fetched -- the video itself is fine.
+   - Install `curl_cffi` (see Environment Variables) so the server can impersonate a
+     real browser handshake, and let the built-in retries handle the rest.
+
+### Reading the Logs
+
+Every request gets its own correlation id and a running elapsed time, so a failure can
+be placed exactly on the timeline:
+
+```
+INFO  [download:1788236943786] + 4401ms format.selected  | formatCount=1 formats=h264_540p_800567-1
+INFO  [download.try1:...]      + 4977ms download.first-byte | totalSize=2.62MiB
+INFO  [download.try1:...]      + 5591ms download.progress | percent=38.1 of=2.62MiB speed=1.62MiB/s
+ERROR [download:...]           +10499ms download.failed  | diagnosis="failed during extraction ..." percentReached=0
+```
+
+The `download.failed` line always carries a `diagnosis` naming the stage that broke
+and a `percentReached`, which distinguishes the three cases that look identical from
+the UI: a failure before the transfer started, a stall part-way through, and a
+transfer that completed but failed in post-processing.
 
 ### Debug Mode
 

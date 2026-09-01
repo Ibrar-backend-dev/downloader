@@ -1,0 +1,194 @@
+[
+  {
+    "platform": "YouTube",
+    "url": "https://www.youtube.com/watch?v=BaW_jenozKc",
+    "note": "yt-dlp project test video",
+    "status": "timeout",
+    "detail": "no terminal event in 120s",
+    "seconds": 120.001,
+    "files": [],
+    "bytes": 0,
+    "warning": "WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one",
+    "lastProgress": 0
+  },
+  {
+    "platform": "YouTube",
+    "url": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+    "note": "Big Buck Bunny (official, CC-BY)",
+    "status": "timeout",
+    "detail": "no terminal event in 120s",
+    "seconds": 120.006,
+    "files": [],
+    "bytes": 0,
+    "warning": "WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one",
+    "lastProgress": 0
+  },
+  {
+    "platform": "Vimeo",
+    "url": "https://vimeo.com/147365861",
+    "note": "from repo TEST_URLS.md",
+    "status": "error",
+    "detail": "WARNING: [vimeo] The extractor is attempting impersonation, but no impersonate target is available. If you encounter errors, then see  https://github.com/yt-dlp/yt-dlp#impersonation  for information on installing the required dependencies",
+    "seconds": 2.835,
+    "files": [],
+    "bytes": 0,
+    "warning": "WARNING: [vimeo] The extractor is attempting impersonation, but no impersonate target is available. If you encounter errors, then see  https://github.com/yt-dlp/yt-dlp#impersonation  for information on installing the required dependencies",
+    "lastProgress": 0
+  },
+  {
+    "platform": "Archive.org",
+    "url": "https://archive.org/details/Cops1922",
+    "note": "Buster Keaton, public domain",
+    "status": "completed",
+    "detail": "",
+    "seconds": 50.583,
+    "files": [
+      "Buster Keaton's ＂Cops＂ (1922).ogv"
+    ],
+    "bytes": 70327598,
+    "warning": null,
+    "lastProgress": 100
+  },
+  {
+    "platform": "Dailymotion",
+    "url": "https://www.dailymotion.com/video/x2iuewm",
+    "note": "IGN news clip",
+    "status": "error",
+    "detail": "ERROR: [dailymotion] x2iuewm: Not found.",
+    "seconds": 1.738,
+    "files": [],
+    "bytes": 0,
+    "warning": "ERROR: [dailymotion] x2iuewm: Not found.",
+    "lastProgress": 0
+  },
+  {
+    "platform": "SoundCloud",
+    "url": "https://soundcloud.com/jaimemf/youtube-dl-test-video-a-y-baw/s-8Pjrp",
+    "note": "yt-dlp test track (audio)",
+    "status": "completed",
+    "detail": "",
+    "seconds": 5.027,
+    "files": [
+      "Youtube - Dl Test Video '' Ä↭.mp3"
+    ],
+    "bytes": 158823,
+    "warning": null,
+    "lastProgress": 100
+  },
+  {
+    "platform": "Streamable",
+    "url": "https://streamable.com/moo",
+    "note": "yt-dlp test clip",
+    "status": "completed",
+    "detail": "",
+    "seconds": 5.454,
+    "files": [
+      "me irl.mp4"
+    ],
+    "bytes": 3044857,
+    "warning": null,
+    "lastProgress": 100
+  },
+  {
+    "platform": "Reddit",
+    "url": "https://www.reddit.com/r/videos/comments/6rrwyj/that_small_heart_attack/",
+    "note": "r/videos post",
+    "status": "error",
+    "detail": "ERROR: [Reddit] zv89llsvexdz: Requested format is not available. Use --list-formats for a list of available formats",
+    "seconds": 6.193,
+    "files": [],
+    "bytes": 0,
+    "warning": "ERROR: [Reddit] zv89llsvexdz: Requested format is not available. Use --list-formats for a list of available formats",
+    "lastProgress": 0
+  },
+  {
+    "platform": "TikTok",
+    "url": "https://www.tiktok.com/@patroxofficial/video/6742501081818877190",
+    "note": "yt-dlp test post",
+    "status": "error",
+    "detail": "WARNING: [TikTok] The extractor is attempting impersonation, but no impersonate target is available. If you encounter errors, then see  https://github.com/yt-dlp/yt-dlp#impersonation  for information on installing the required dependencies",
+    "seconds": 2.131,
+    "files": [],
+    "bytes": 0,
+    "warning": "WARNING: [TikTok] The extractor is attempting impersonation, but no impersonate target is available. If you encounter errors, then see  https://github.com/yt-dlp/yt-dlp#impersonation  for information on installing the required dependencies",
+    "lastProgress": 0
+  },
+  {
+    "platform": "X / Twitter",
+    "url": "https://twitter.com/starwars/status/665052190608723968",
+    "note": "official Star Wars account",
+    "status": "error",
+    "detail": "ERROR: [twitter:amplify] 93ad3568-03d2-47b9-a57b-624b88693acd: Unable to download webpage: HTTP Error 500: Domain Not Found (caused by <HTTPError 500: Domain Not Found>)",
+    "seconds": 3.879,
+    "files": [],
+    "bytes": 0,
+    "warning": "ERROR: [twitter:amplify] 93ad3568-03d2-47b9-a57b-624b88693acd: Unable to download webpage: HTTP Error 500: Domain Not Found (caused by <HTTPError 500: Domain Not Found>)",
+    "lastProgress": 0
+  },
+  {
+    "platform": "Instagram",
+    "url": "https://www.instagram.com/p/BQ0eAlwhDrw/",
+    "note": "yt-dlp test post",
+    "status": "completed",
+    "detail": "",
+    "seconds": 4.732,
+    "files": [
+      "Video by instagram.mp4"
+    ],
+    "bytes": 39753,
+    "warning": null,
+    "lastProgress": 100
+  },
+  {
+    "platform": "Facebook",
+    "url": "https://www.facebook.com/radiokicksfm/videos/3676516585958356/",
+    "note": "yt-dlp test post",
+    "status": "error",
+    "detail": "ERROR: [facebook] 3676516585958356: Cannot parse data; please report this issue on  https://github.com/yt-dlp/yt-dlp/issues?q= , filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U",
+    "seconds": 2.386,
+    "files": [],
+    "bytes": 0,
+    "warning": "ERROR: [facebook] 3676516585958356: Cannot parse data; please report this issue on  https://github.com/yt-dlp/yt-dlp/issues?q= , filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U",
+    "lastProgress": 0
+  },
+  {
+    "platform": "Twitch",
+    "url": "https://clips.twitch.tv/FaintLightGullWholeWheat",
+    "note": "clip, yt-dlp test",
+    "status": "completed",
+    "detail": "",
+    "seconds": 9.431,
+    "files": [
+      "EA Play 2016 Live from the Novo Theatre.mp4"
+    ],
+    "bytes": 16299328,
+    "warning": null,
+    "lastProgress": 100
+  },
+  {
+    "platform": "BiliBili",
+    "url": "https://www.bilibili.com/video/BV13x41117TL",
+    "note": "yt-dlp test video",
+    "status": "error",
+    "detail": "ERROR: [BiliBili] BV13x41117TL: Requested format is not available. Use --list-formats for a list of available formats",
+    "seconds": 6.174,
+    "files": [],
+    "bytes": 0,
+    "warning": "ERROR: [BiliBili] BV13x41117TL: Requested format is not available. Use --list-formats for a list of available formats",
+    "lastProgress": 0
+  },
+  {
+    "platform": "Pinterest",
+    "url": "https://www.pinterest.com/pin/664281013778109217/",
+    "note": "yt-dlp test pin",
+    "status": "completed",
+    "detail": "",
+    "seconds": 11.648,
+    "files": [
+      "Origami.mp4"
+    ],
+    "bytes": 18403864,
+    "warning": null,
+    "lastProgress": 100
+  }
+]
