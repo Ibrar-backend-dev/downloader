@@ -5,7 +5,7 @@ const { getGenericDownloadError, isTransientFailure } = require('../utils/downlo
 const { createLogger } = require('../utils/logger');
 const { createTracer } = require('../utils/ytdlpTrace');
 const { spawnYtDlp } = require('../utils/ytdlpProcess');
-const { isTikTokUrl, accessArgs } = require('../utils/ytdlpAccess');
+const { accessArgs } = require('../utils/ytdlpAccess');
 const router = express.Router();
 
 // TikTok rejects roughly a third of extraction attempts with a challenge that
@@ -19,7 +19,7 @@ router.post('/', async (req, res) => {
   const log = createLogger('download', downloadId);
 
   try {
-    const { url, format, quality, audioOnly, outputPath } = req.body;
+    const { url, format, quality, audioOnly, outputPath, cookiesFromBrowser, cookiesFile } = req.body;
     const io = req.app.get('socketio');
 
     log.info('request.received', {
@@ -43,9 +43,9 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Invalid URL format. Please provide a valid HTTP/HTTPS URL.' });
     }
 
-    const tiktok = isTikTokUrl(url);
     log.info('validate.passed', {
-      tiktok,
+      cookiesFromBrowser: process.env.YTDLP_COOKIES_FROM_BROWSER || null,
+      cookiesFile: process.env.YTDLP_COOKIES_FILE || null,
       cookiesFromBrowser: process.env.YTDLP_COOKIES_FROM_BROWSER || null,
       cookiesFile: process.env.YTDLP_COOKIES_FILE || null,
     });
@@ -57,15 +57,7 @@ router.post('/', async (req, res) => {
     // Build yt-dlp command with better YouTube handling
     const args = [];
     
-    // Add user agent and headers to bypass some restrictions. TikTok needs a
-    // stricter set (matching TLS fingerprint, cookies), which accessArgs
-    // supplies -- including its own user agent, so don't send one twice.
-    if (isTikTokUrl(url)) {
-      args.push(...(await accessArgs(url, log)));
-    } else {
-      args.push('--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36');
-      args.push('--add-header', 'Accept-Language:en-US,en;q=0.9');
-    }
+    args.push(...(await accessArgs(url, log, { cookiesFromBrowser, cookiesFile })));
 
     if (audioOnly) {
       args.push('-f', 'bestaudio/best');
@@ -80,7 +72,7 @@ router.post('/', async (req, res) => {
       }
     }
 
-    args.push('-o', path.join(downloadsDir, '%(title)s.%(ext)s'));
+    args.push('-o', path.join(downloadsDir, '%(title).80s [%(id)s].%(ext)s'));
     args.push('--no-playlist');
     args.push('--progress');
     // One progress update per line instead of carriage-return rewrites, so the
