@@ -6,6 +6,7 @@ const { createLogger } = require('../utils/logger');
 const { createTracer } = require('../utils/ytdlpTrace');
 const { spawnYtDlp } = require('../utils/ytdlpProcess');
 const { accessArgs } = require('../utils/ytdlpAccess');
+const { legacyVideoSelector, explicitVideoSelector } = require('../utils/formatSelection');
 const router = express.Router();
 
 // TikTok rejects roughly a third of extraction attempts with a challenge that
@@ -19,12 +20,13 @@ router.post('/', async (req, res) => {
   const log = createLogger('download', downloadId);
 
   try {
-    const { url, format, quality, audioOnly, outputPath, cookiesFromBrowser, cookiesFile } = req.body;
+    const { url, format, formatId, quality, audioOnly, outputPath } = req.body;
     const io = req.app.get('socketio');
 
     log.info('request.received', {
       url,
       format,
+      formatId,
       quality,
       audioOnly: Boolean(audioOnly),
       outputPath,
@@ -46,8 +48,6 @@ router.post('/', async (req, res) => {
     log.info('validate.passed', {
       cookiesFromBrowser: process.env.YTDLP_COOKIES_FROM_BROWSER || null,
       cookiesFile: process.env.YTDLP_COOKIES_FILE || null,
-      cookiesFromBrowser: process.env.YTDLP_COOKIES_FROM_BROWSER || null,
-      cookiesFile: process.env.YTDLP_COOKIES_FILE || null,
     });
 
     const downloadsDir = path.join(__dirname, '../../downloads');
@@ -57,18 +57,20 @@ router.post('/', async (req, res) => {
     // Build yt-dlp command with better YouTube handling
     const args = [];
     
-    args.push(...(await accessArgs(url, log, { cookiesFromBrowser, cookiesFile })));
+    args.push(...(await accessArgs(url, log)));
 
     if (audioOnly) {
       args.push('-f', 'bestaudio/best');
       args.push('--extract-audio');
       args.push('--audio-format', format || 'mp3');
     } else {
-      if (quality && quality !== 'best') {
-        args.push('-f', `best[height<=${quality}]/best`);
-      } else {
-        // Use 'b' instead of 'best' to suppress warning
-        args.push('-f', 'b');
+      try {
+        args.push('-f', formatId ? explicitVideoSelector(formatId) : legacyVideoSelector(quality));
+      } catch (error) {
+        if (error.code === 'INVALID_FORMAT_ID' || error.code === 'INVALID_QUALITY') {
+          return res.status(400).json({ error: error.message, code: error.code });
+        }
+        throw error;
       }
     }
 

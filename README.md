@@ -131,16 +131,16 @@ The production server will serve the built React app and API on the same port (5
 ## API Endpoints
 
 ### Download Endpoints
-- `POST /api/download` - Start a download
+- `POST /api/download` - Start a download. Send `{ "url": "...", "formatId": "137" }` after calling `/api/info`; `quality` remains supported for legacy clients.
 - `GET /api/download/list` - Get list of downloaded files
 - `DELETE /api/download/:filename` - Delete a downloaded file
 
 ### Information Endpoints
-- `GET /api/info?url=<video_url>` - Get video information
+- `GET /api/info?url=<video_url>` - Get structured video information, including `formats`, `format_id`, dimensions, codecs, and estimated sizes
 - `GET /api/info/playlist?url=<playlist_url>` - Get playlist information
 
 ### Format Endpoints
-- `GET /api/formats?url=<video_url>` - Get available formats
+- `GET /api/formats?url=<video_url>` - Legacy endpoint that parses yt-dlp's human-readable `--list-formats` output
 - `GET /api/formats/quality-presets` - Get quality presets
 
 ## Socket.IO Events

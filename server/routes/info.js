@@ -163,12 +163,15 @@ router.get('/', async (req, res) => {
         ext: format.ext,
         quality: format.quality,
         filesize: format.filesize,
+        filesize_approx: format.filesize_approx,
         width: format.width,
         height: format.height,
         fps: format.fps,
         vcodec: format.vcodec,
         acodec: format.acodec,
-        format_note: format.format_note
+        format_note: format.format_note,
+        has_video: format.vcodec && format.vcodec !== 'none',
+        has_audio: format.acodec && format.acodec !== 'none'
       })) : []
     };
 

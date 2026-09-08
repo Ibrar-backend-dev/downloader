@@ -5,6 +5,7 @@ const { createTracer, createLineSplitter } = require('../utils/ytdlpTrace');
 const { isTransientFailure } = require('../utils/downloadError');
 const { isTikTokUrl, accessArgs } = require('../utils/ytdlpAccess');
 const { spawnYtDlp } = require('../utils/ytdlpProcess');
+const { videoSelector } = require('../utils/formatSelection');
 const router = express.Router();
 
 let requestCounter = 0;
@@ -24,10 +25,7 @@ const humanBytes = (n) => {
 
 // Video+audio are separate streams on most modern platforms, so ask for the
 // best of each and let yt-dlp fall back to a pre-merged file when one exists.
-const selFor = (q) =>
-  q && q !== 'best'
-    ? `bv*[height<=${q}]+ba/b[height<=${q}]/b`
-    : 'bv*+ba/b';
+const selFor = (q) => videoSelector(q);
 
 const isHttp = (u) => /^https?:\/\//i.test(u || '');
 const safeName = (s) =>
@@ -37,6 +35,17 @@ const safeName = (s) =>
 const ffmpegArgs = process.env.FFMPEG_LOCATION
   ? ['--ffmpeg-location', process.env.FFMPEG_LOCATION]
   : [];
+
+const resolveError = (res, statusCode, code, message, details) => res.status(statusCode).json({
+  success: false,
+  status: 'error',
+  data: null,
+  error: {
+    code,
+    message,
+    ...(details ? { details } : {}),
+  },
+});
 
 // GET /api/resolve?url=...&quality=360
 // Returns what to download and where to fetch it, without transferring media.
@@ -48,20 +57,24 @@ router.get('/resolve', async (req, res) => {
 
   if (!isHttp(url)) {
     log.warn('validate.rejected', { reason: 'bad-url-format', url });
-    return res.status(400).json({
-      success: false,
-      status: 'failed',
-      downloaded: false,
-      message: 'Download failed. Provide a valid http(s) URL.',
-      error: 'Invalid URL format. Provide an http(s) URL.'
-    });
+    return resolveError(res, 400, 'INVALID_URL', 'Provide a valid http(s) URL.');
+  }
+
+  let selector;
+  try {
+    selector = selFor(quality);
+  } catch (error) {
+    if (error.code === 'INVALID_QUALITY') {
+      return resolveError(res, 400, error.code, error.message);
+    }
+    throw error;
   }
 
   const argv = [
-    '-f', selFor(quality), '-J', '--no-playlist',
+    '-f', selector, '-J', '--no-playlist',
     ...(await accessArgs(url, log)), ...ffmpegArgs, url,
   ];
-  log.info('ytdlp.args', { selector: selFor(quality), argv });
+  log.info('ytdlp.args', { selector, argv });
 
   const startedAt = Date.now();
   const yt = spawnYtDlp(argv);
@@ -83,14 +96,7 @@ router.get('/resolve', async (req, res) => {
       message: e.message,
       hint: e.code === 'ENOENT' ? 'yt-dlp is not on the server PATH' : undefined,
     });
-    res.status(500).json({
-      success: false,
-      status: 'failed',
-      downloaded: false,
-      message: 'Download failed because yt-dlp could not be started.',
-      error: 'Could not run yt-dlp',
-      details: e.message
-    });
+    resolveError(res, 500, 'YTDLP_UNAVAILABLE', 'yt-dlp could not be started.', e.message);
   });
 
   yt.on('close', (code) => {
@@ -106,14 +112,7 @@ router.get('/resolve', async (req, res) => {
         durationMs,
         stderr: err.trim().slice(-800),
       });
-      return res.status(502).json({
-        success: false,
-        status: 'failed',
-        downloaded: false,
-        message: 'Download failed because the video could not be extracted.',
-        error: 'Extraction failed',
-        details: err.trim().slice(-400)
-      });
+      return resolveError(res, 502, 'EXTRACTION_FAILED', 'The video could not be extracted.', err.trim().slice(-400));
     }
 
     let info;
@@ -127,14 +126,7 @@ router.get('/resolve', async (req, res) => {
         message: e.message,
         stdoutHead: out.trim().slice(0, 300),
       });
-      return res.status(502).json({
-        success: false,
-        status: 'failed',
-        downloaded: false,
-        message: 'Download failed because the extractor returned invalid data.',
-        error: 'Could not parse yt-dlp output',
-        details: e.message
-      });
+      return resolveError(res, 502, 'INVALID_EXTRACTOR_RESPONSE', 'The extractor returned invalid data.', e.message);
     }
 
     const downloads = info.map((entry, i) => {
@@ -164,17 +156,36 @@ router.get('/resolve', async (req, res) => {
       durationMs,
     });
 
+    const primary = info[0] || {};
+    const media = {
+      id: primary.id || null,
+      title: primary.title || 'Untitled video',
+      description: primary.description || '',
+      duration: primary.duration || null,
+      uploader: primary.uploader || primary.channel || null,
+      thumbnail: primary.thumbnail || null,
+      webpageUrl: primary.webpage_url || url,
+      extractor: primary.extractor || null,
+    };
+    const primaryDownload = downloads[0] || null;
+
     res.json({
       success: true,
       status: 'ready',
-      downloaded: false,
       message: downloads.length === 1
         ? 'Video is ready to download.'
         : `${downloads.length} videos are ready to download.`,
-      title: info[0] && info[0].title,
-      extractor: info[0] && info[0].extractor,
-      count: downloads.length,
+      error: null,
+      data: {
+        media,
+        download: primaryDownload,
+        items: downloads,
+      },
+      // Temporary compatibility alias for clients using the previous payload.
       downloads,
+      title: media.title,
+      extractor: media.extractor,
+      count: downloads.length,
     });
   });
 });

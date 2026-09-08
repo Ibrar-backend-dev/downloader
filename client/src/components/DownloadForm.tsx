@@ -37,6 +37,22 @@ interface VideoInfo {
   thumbnail: string;
   webpage_url: string;
   extractor: string;
+  formats: VideoFormat[];
+}
+
+interface VideoFormat {
+  format_id: string;
+  ext: string;
+  filesize?: number;
+  filesize_approx?: number;
+  width?: number;
+  height?: number;
+  fps?: number;
+  vcodec?: string;
+  acodec?: string;
+  format_note?: string;
+  has_video?: boolean;
+  has_audio?: boolean;
 }
 
 interface QualityPreset {
@@ -50,6 +66,7 @@ const DownloadForm: React.FC = () => {
   const [audioOnly, setAudioOnly] = useState(false);
   const [format, setFormat] = useState('mp3');
   const [quality, setQuality] = useState('best');
+  const [formatId, setFormatId] = useState('');
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -130,7 +147,11 @@ const DownloadForm: React.FC = () => {
       const response = await axios.get(`${apiUrl}/info`, {
         params: { url }
       });
-      setVideoInfo(response.data);
+      const formats = response.data.formats || [];
+      const videoFormats = formats.filter((item: VideoFormat) => item.has_video !== false);
+      const defaultFormat = videoFormats.find((item: VideoFormat) => item.has_audio) || videoFormats[0];
+      setVideoInfo({ ...response.data, formats });
+      setFormatId(defaultFormat?.format_id || '');
     } catch (error: any) {
       if (error.code === 'ERR_NETWORK' || error.message.includes('Network Error')) {
         setError('Backend server not available. Please start the backend server to use video info features.');
@@ -145,7 +166,8 @@ const DownloadForm: React.FC = () => {
           view_count: 1000,
           thumbnail: 'https://via.placeholder.com/320x180/1976d2/ffffff?text=Demo+Video',
           webpage_url: url,
-          extractor: 'demo'
+          extractor: 'demo',
+          formats: []
         };
         setVideoInfo(mockVideoInfo);
       } else {
@@ -168,8 +190,9 @@ const DownloadForm: React.FC = () => {
 
     try {
       const response = await axios.post(`${apiUrl}/download`, {
-        url,
+        url: url.trim(),
         format: audioOnly ? format : undefined,
+        formatId: !audioOnly ? formatId || undefined : undefined,
         quality: !audioOnly ? quality : undefined,
         audioOnly
       });
@@ -199,6 +222,18 @@ const DownloadForm: React.FC = () => {
       return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const formatSize = (bytes?: number) => {
+    if (!bytes) return 'size unknown';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let value = bytes;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit += 1;
+    }
+    return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
   };
 
   return (
@@ -349,6 +384,26 @@ const DownloadForm: React.FC = () => {
                   </Box>
                 </Box>
               </Box>
+
+              {videoInfo.formats?.length > 0 && (
+                <FormControl fullWidth>
+                  <InputLabel>Video format and size</InputLabel>
+                  <Select
+                    value={formatId}
+                    label="Video format and size"
+                    onChange={(e) => setFormatId(e.target.value)}
+                  >
+                    {videoInfo.formats
+                      .filter((item) => item.has_video !== false)
+                      .map((item) => (
+                        <MenuItem key={item.format_id} value={item.format_id}>
+                          {item.height ? `${item.height}p` : 'Video'} · {item.ext.toUpperCase()} · {formatSize(item.filesize || item.filesize_approx)}
+                          {item.has_audio ? ' · video + audio' : ' · video only'}
+                        </MenuItem>
+                      ))}
+                  </Select>
+                </FormControl>
+              )}
             </CardContent>
           </Card>
         )}
