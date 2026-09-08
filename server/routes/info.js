@@ -167,7 +167,7 @@ router.get('/', async (req, res) => {
       id: videoInfo.id,
       title: videoInfo.title,
       resolutions: formats
-        .filter(format => format.has_video && format.height)
+        .filter(format => format.has_video && format.height && format.ext === 'mp4')
         .map(format => ({
           format_id: format.format_id,
           resolution: `${format.height}p`,

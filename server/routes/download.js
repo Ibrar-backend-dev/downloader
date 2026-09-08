@@ -66,6 +66,7 @@ router.post('/', async (req, res) => {
     } else {
       try {
         args.push('-f', formatId ? explicitVideoSelector(formatId) : legacyVideoSelector(quality));
+        args.push('--merge-output-format', 'mp4');
       } catch (error) {
         if (error.code === 'INVALID_FORMAT_ID' || error.code === 'INVALID_QUALITY') {
           return res.status(400).json({ error: error.message, code: error.code });
