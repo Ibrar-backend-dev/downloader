@@ -180,12 +180,7 @@ router.get('/', async (req, res) => {
         .map(format => ({
           format_id: format.format_id,
           resolution: `${format.height}p`,
-          width: format.width,
-          height: format.height,
-          ext: format.ext,
-          filesize: format.filesize,
-          filesize_approx: format.filesize_approx,
-          has_audio: format.has_audio
+          ext: format.ext
         }))
     };
 
