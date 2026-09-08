@@ -153,6 +153,7 @@ router.get('/', async (req, res) => {
       quality: format.quality,
       filesize: format.filesize,
       filesize_approx: format.filesize_approx,
+      tbr: format.tbr,
       width: format.width,
       height: format.height,
       fps: format.fps,
@@ -166,13 +167,30 @@ router.get('/', async (req, res) => {
     const info = {
       id: videoInfo.id,
       title: videoInfo.title,
-      resolutions: formats
-        .filter(format => format.has_video && format.height && format.ext === 'mp4')
-        .map(format => ({
+      resolutions: Array.from(
+        formats
+          .filter(format => format.has_video && format.height && format.ext === 'mp4')
+          .reduce((bestByHeight, format) => {
+            const current = bestByHeight.get(format.height);
+            const formatScore = (Number(format.tbr) || 0) * 1000
+              + (format.has_audio ? 1 : 0);
+            const currentScore = current
+              ? (Number(current.tbr) || 0) * 1000
+                + (current.has_audio ? 1 : 0)
+              : -1;
+
+            if (!current || formatScore > currentScore) {
+              bestByHeight.set(format.height, format);
+            }
+            return bestByHeight;
+          }, new Map())
+          .values()
+      ).map(format => ({
           format_id: format.format_id,
           resolution: `${format.height}p`,
           ext: format.ext
         }))
+        .sort((a, b) => Number.parseInt(a.resolution, 10) - Number.parseInt(b.resolution, 10))
     };
 
     log.info('info.resolved', {
