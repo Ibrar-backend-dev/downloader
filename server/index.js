@@ -4,7 +4,6 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const http = require('http');
@@ -29,20 +28,29 @@ app.use(morgan('combined'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static files from React build in production
-if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../client/build')));
-}
-
 // Ensure downloads directory exists
 const downloadsDir = path.join(__dirname, '../downloads');
 fs.ensureDirSync(downloadsDir);
 
-// Routes
-app.use('/api/download', require('./routes/download'));
-app.use('/api/info', require('./routes/info'));
-app.use('/api/formats', require('./routes/formats'));
-app.use('/api', require('./routes/stream'));
+// Public API routes
+const downloadRoutes = require('./routes/download');
+const infoRoutes = require('./routes/info');
+
+// Only the root operation of each retained router is public. The route files
+// still contain their older handlers for rollback/reference, but these mounts
+// intentionally do not expose those extra endpoints.
+app.use('/api/download', (req, res, next) => {
+  if (req.path !== '/') return res.status(404).json({ error: 'Endpoint not found' });
+  downloadRoutes(req, res, next);
+});
+app.use('/api/info', (req, res, next) => {
+  if (req.path !== '/') return res.status(404).json({ error: 'Endpoint not found' });
+  infoRoutes(req, res, next);
+});
+
+// Retained for rollback/reference, but intentionally not public right now:
+// app.use('/api/formats', require('./routes/formats'));
+// app.use('/api', require('./routes/stream'));
 
 // Socket.io for real-time download progress
 io.on('connection', (socket) => {
@@ -55,13 +63,6 @@ io.on('connection', (socket) => {
 
 // Export io for use in routes
 app.set('socketio', io);
-
-// Serve React app in production
-if (process.env.NODE_ENV === 'production') {
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../client/build/index.html'));
-  });
-}
 
 // Error handling middleware
 app.use((err, req, res, next) => {

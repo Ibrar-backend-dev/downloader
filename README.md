@@ -1,54 +1,15 @@
-# Seal Web App
+# Downloader API
 
-A modern web-based video/audio downloader interface for yt-dlp, inspired by and based on the [Seal Android app](https://github.com/JunkFood02/Seal) by JunkFood02. This application provides a user-friendly web interface for downloading videos and audio from YouTube, Vimeo, and many other supported platforms.
-
-## Features
-
-### 🎥 Video/Audio Downloading
-- Download videos from 1000+ supported sites including YouTube, Vimeo, TikTok, and more
-- Audio-only downloads with format selection (MP3, M4A, FLAC, etc.)
-- Video quality selection (4K, 1080p, 720p, etc.)
-- Real-time download progress tracking
-
-### 🎛️ Advanced Options
-- Multiple format support
-- Quality presets and custom settings
-- Playlist support (coming soon)
-- Custom output templates (coming soon)
-
-### 🔄 Real-time Updates
-- Live download progress with Socket.IO
-- Real-time status updates
-- Error reporting and handling
-
-### 📱 Modern UI
-- Responsive Material Design interface
-- Dark/light theme support (coming soon)
-- Mobile-friendly design
-- Intuitive user experience
-
-### 📁 File Management
-- Download history with file details
-- File size and creation date tracking
-- Easy file deletion
-- Organized downloads folder
+An API-only video and audio downloader backend powered by `yt-dlp`.
 
 ## Tech Stack
 
-### Backend
 - **Node.js** with Express.js
 - **Socket.IO** for real-time communication
 - **yt-dlp** as the download engine
 - **Helmet** for security
 - **CORS** for cross-origin requests
 - **Morgan** for logging
-
-### Frontend
-- **React 18** with TypeScript
-- **Material-UI (MUI)** for components
-- **Socket.IO Client** for real-time updates
-- **Axios** for HTTP requests
-- **Emotion** for styling
 
 ## Prerequisites
 
@@ -76,72 +37,37 @@ Download from [yt-dlp releases](https://github.com/yt-dlp/yt-dlp/releases) and a
 
 ## Installation
 
-1. **Clone or navigate to the project directory:**
+1. **Navigate to the project directory:**
 ```bash
-cd "Seal Web App"
+cd Downloader
 ```
 
-2. **Install root dependencies:**
+2. **Install dependencies:**
 ```bash
 npm install
 ```
 
-3. **Install all dependencies (root + client):**
-```bash
-npm run install:all
-```
+## Running the API
 
-## Development
-
-### Start the development server:
-```bash
-npm run dev
-```
-
-This will start:
-- Backend server on `http://localhost:5000`
-- Frontend development server on `http://localhost:3000`
-
-### Start servers individually:
-
-**Backend only:**
+### Development server:
 ```bash
 npm run server:dev
 ```
 
-**Frontend only:**
-```bash
-npm run client:dev
-```
-
-## Production
-
-### Build the application:
-```bash
-npm run build
-```
-
-### Start production server:
+### Production server:
 ```bash
 npm start
 ```
 
-The production server will serve the built React app and API on the same port (5000).
+The API listens on port `5000` by default.
 
 ## API Endpoints
 
-### Download Endpoints
-- `POST /api/download` - Start a download. Send `{ "url": "...", "formatId": "137" }` after calling `/api/info`; `quality` remains supported for legacy clients.
-- `GET /api/download/list` - Get list of downloaded files
-- `DELETE /api/download/:filename` - Delete a downloaded file
+### Public endpoints
+- `GET /api/info?url=<video_url>` - Inspect a video and return metadata and available formats, including sizes when yt-dlp provides them.
+- `POST /api/download` - Download the selected option. Send `{ "url": "...", "formatId": "137" }` after calling `/api/info`.
 
-### Information Endpoints
-- `GET /api/info?url=<video_url>` - Get structured video information, including `formats`, `format_id`, dimensions, codecs, and estimated sizes
-- `GET /api/info/playlist?url=<playlist_url>` - Get playlist information
-
-### Format Endpoints
-- `GET /api/formats?url=<video_url>` - Legacy endpoint that parses yt-dlp's human-readable `--list-formats` output
-- `GET /api/formats/quality-presets` - Get quality presets
+The old format, resolve, stream, file-list, and file-delete route registrations are disabled in `server/index.js`. Their route files remain in the repository for possible later recovery.
 
 ## Socket.IO Events
 

@@ -1,16 +1,13 @@
 {
   "name": "seal-web-app",
   "version": "1.0.0",
-  "description": "A web-based video/audio downloader interface for yt-dlp",
+  "description": "An API-only video/audio downloader backend for yt-dlp",
   "main": "server/index.js",
   "scripts": {
-    "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
+    "dev": "npm run server:dev",
     "server:dev": "nodemon server/index.js",
-    "client:dev": "cd client && npm start",
-    "build": "cd client && npm run build",
     "start": "node server/index.js",
-    "install:all": "npm install && cd client && npm install",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test server/utils/*.test.js"
   },
   "keywords": [
     "video-downloader",
@@ -34,7 +31,6 @@
     "child_process": "^1.0.2"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1",
-    "concurrently": "^8.2.0"
+    "nodemon": "^3.0.1"
   }
 }
