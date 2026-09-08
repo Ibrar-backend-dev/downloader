@@ -4,6 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const http = require('http');
