@@ -166,15 +166,6 @@ router.get('/', async (req, res) => {
     const info = {
       id: videoInfo.id,
       title: videoInfo.title,
-      description: videoInfo.description,
-      duration: videoInfo.duration,
-      uploader: videoInfo.uploader,
-      upload_date: videoInfo.upload_date,
-      view_count: videoInfo.view_count,
-      thumbnail: videoInfo.thumbnail,
-      webpage_url: videoInfo.webpage_url,
-      extractor: videoInfo.extractor,
-      formats,
       resolutions: formats
         .filter(format => format.has_video && format.height)
         .map(format => ({
@@ -187,9 +178,9 @@ router.get('/', async (req, res) => {
     log.info('info.resolved', {
       id: info.id,
       title: info.title,
-      extractor: info.extractor,
+      extractor: videoInfo.extractor,
       duration: info.duration,
-      formatCount: info.formats.length,
+      formatCount: formats.length,
       totalMs: log.elapsed(),
     });
     res.json(info);
