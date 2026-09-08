@@ -147,6 +147,22 @@ router.get('/', async (req, res) => {
     }
 
     // Extract relevant information
+    const formats = videoInfo.formats ? videoInfo.formats.map(format => ({
+      format_id: format.format_id,
+      ext: format.ext,
+      quality: format.quality,
+      filesize: format.filesize,
+      filesize_approx: format.filesize_approx,
+      width: format.width,
+      height: format.height,
+      fps: format.fps,
+      vcodec: format.vcodec,
+      acodec: format.acodec,
+      format_note: format.format_note,
+      has_video: format.vcodec && format.vcodec !== 'none',
+      has_audio: format.acodec && format.acodec !== 'none'
+    })) : [];
+
     const info = {
       id: videoInfo.id,
       title: videoInfo.title,
@@ -158,21 +174,19 @@ router.get('/', async (req, res) => {
       thumbnail: videoInfo.thumbnail,
       webpage_url: videoInfo.webpage_url,
       extractor: videoInfo.extractor,
-      formats: videoInfo.formats ? videoInfo.formats.map(format => ({
-        format_id: format.format_id,
-        ext: format.ext,
-        quality: format.quality,
-        filesize: format.filesize,
-        filesize_approx: format.filesize_approx,
-        width: format.width,
-        height: format.height,
-        fps: format.fps,
-        vcodec: format.vcodec,
-        acodec: format.acodec,
-        format_note: format.format_note,
-        has_video: format.vcodec && format.vcodec !== 'none',
-        has_audio: format.acodec && format.acodec !== 'none'
-      })) : []
+      formats,
+      resolutions: formats
+        .filter(format => format.has_video && format.height)
+        .map(format => ({
+          format_id: format.format_id,
+          resolution: `${format.height}p`,
+          width: format.width,
+          height: format.height,
+          ext: format.ext,
+          filesize: format.filesize,
+          filesize_approx: format.filesize_approx,
+          has_audio: format.has_audio
+        }))
     };
 
     log.info('info.resolved', {
