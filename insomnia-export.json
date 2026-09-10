@@ -1,0 +1,133 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-09-08T00:00:00.000Z",
+  "__export_source": "downloader-api.insomnia.export",
+  "resources": [
+    {
+      "_id": "wrk_downloader_api",
+      "parentId": null,
+      "modified": 1788825600000,
+      "created": 1788825600000,
+      "name": "Downloader API",
+      "description": "Two-endpoint API for inspecting videos and downloading a selected format.",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_downloader_base",
+      "parentId": "wrk_downloader_api",
+      "modified": 1788825600000,
+      "created": 1788825600000,
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:5000",
+        "video_url": "https://www.youtube.com/watch?v=example",
+        "format_id": "137",
+        "completed_filename": "video title [abc123].mp4"
+      },
+      "dataPropertyOrder": null,
+      "color": null,
+      "isPrivate": false,
+      "metaSortKey": 0,
+      "_type": "environment"
+    },
+    {
+      "_id": "fld_downloader_public",
+      "parentId": "wrk_downloader_api",
+      "modified": 1788825600000,
+      "created": 1788825600000,
+      "name": "Public API",
+      "description": "The only public API endpoints currently enabled.",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_downloader_info",
+      "parentId": "fld_downloader_public",
+      "modified": 1788825600000,
+      "created": 1788825600000,
+      "name": "Inspect video information",
+      "description": "Returns video metadata and available formats, including sizes when yt-dlp provides them.",
+      "method": "GET",
+      "body": {},
+      "parameters": [
+        {
+          "id": "pair_downloader_info_url",
+          "name": "url",
+          "value": "{{ _.video_url }}",
+          "description": "Video URL to inspect.",
+          "disabled": false
+        }
+      ],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request",
+      "url": "{{ _.base_url }}/api/info"
+    },
+    {
+      "_id": "req_downloader_download",
+      "parentId": "fld_downloader_public",
+      "modified": 1788825600000,
+      "created": 1788825600000,
+      "name": "Download selected format",
+      "description": "Starts a server-side download using a format_id returned by the info request.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"url\": \"{{ _.video_url }}\",\n  \"formatId\": \"{{ _.format_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -900,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request",
+      "url": "{{ _.base_url }}/api/download"
+    },
+    {
+      "_id": "req_downloader_completed_file",
+      "parentId": "fld_downloader_public",
+      "modified": 1788825600000,
+      "created": 1788825600000,
+      "name": "Download completed file",
+      "description": "Downloads the file after the download-complete Socket.IO event provides the filename. Update completed_filename in the environment first.",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -800,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request",
+      "url": "{{ _.base_url }}/api/download/file/{{ _.completed_filename }}"
+    }
+  ]
+}

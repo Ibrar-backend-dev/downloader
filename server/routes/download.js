@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs-extra');
+const crypto = require('crypto');
 const { getGenericDownloadError, isTransientFailure } = require('../utils/downloadError');
 const { createLogger } = require('../utils/logger');
 const { createTracer } = require('../utils/ytdlpTrace');
@@ -16,7 +17,7 @@ const RETRY_DELAY_MS = Number(process.env.YTDLP_RETRY_DELAY_MS || 2000);
 
 // POST /api/download
 router.post('/', async (req, res) => {
-  const downloadId = Date.now().toString();
+  const downloadId = crypto.randomUUID();
   const log = createLogger('download', downloadId);
 
   try {
@@ -215,6 +216,7 @@ router.post('/', async (req, res) => {
         downloadInfo.status = 'completed';
         downloadInfo.progress = 100;
         downloadInfo.error = null;
+        downloadInfo.downloadUrl = `/api/download/file/${encodeURIComponent(downloadInfo.filename)}`;
         io.emit('download-complete', downloadInfo);
         log.info('download.completed', {
           file: downloadInfo.filename,
@@ -260,6 +262,27 @@ router.post('/', async (req, res) => {
       error: 'Download failed',
       details: error.message
     });
+  }
+});
+
+// GET /api/download/file/:filename - Download a completed file
+router.get('/file/:filename', async (req, res) => {
+  const filename = path.basename(req.params.filename);
+  const downloadsDir = path.join(__dirname, '../../downloads');
+  const filePath = path.join(downloadsDir, filename);
+
+  if (!filename || filename !== req.params.filename) {
+    return res.status(400).json({ error: 'Invalid file name' });
+  }
+
+  try {
+    await fs.access(filePath);
+    return res.download(filePath, filename);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    return res.status(500).json({ error: 'Failed to access file' });
   }
 });
 

@@ -66,6 +66,7 @@ The API listens on port `5000` by default.
 ### Public endpoints
 - `GET /api/info?url=<video_url>` - Inspect a video and return metadata and available formats, including sizes when yt-dlp provides them.
 - `POST /api/download` - Download the selected option. Send `{ "url": "...", "formatId": "137" }` after calling `/api/info`.
+- `GET /api/download/file/:filename` - Download a completed file after receiving its `downloadUrl` in the `download-complete` Socket.IO event.
 
 The old format, resolve, stream, file-list, and file-delete route registrations are disabled in `server/index.js`. Their route files remain in the repository for possible later recovery.
 
@@ -80,6 +81,29 @@ The old format, resolve, stream, file-list, and file-delete route registrations 
 - `download-progress` - Download progress update
 - `download-complete` - Download completed
 - `download-error` - Download error occurred
+
+The `POST /api/download` response only acknowledges that the background job
+started. Connect to Socket.IO before starting the job, then match the
+`download-complete` event's `id` with the response's `downloadId`:
+
+```js
+const response = await fetch('http://localhost:5000/api/download', {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ url, formatId: '137' }),
+});
+const { downloadId } = await response.json();
+
+socket.on('download-complete', (download) => {
+   if (download.id !== downloadId) return;
+
+   const link = document.createElement('a');
+   link.href = `http://localhost:5000${download.downloadUrl}`;
+   link.download = download.filename;
+   link.textContent = 'Download file';
+   document.body.appendChild(link);
+});
+```
 
 ## Configuration
 

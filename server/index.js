@@ -41,7 +41,9 @@ const infoRoutes = require('./routes/info');
 // still contain their older handlers for rollback/reference, but these mounts
 // intentionally do not expose those extra endpoints.
 app.use('/api/download', (req, res, next) => {
-  if (req.path !== '/') return res.status(404).json({ error: 'Endpoint not found' });
+  if (req.path !== '/' && !/^\/file\/[^/]+$/.test(req.path)) {
+    return res.status(404).json({ error: 'Endpoint not found' });
+  }
   downloadRoutes(req, res, next);
 });
 app.use('/api/info', (req, res, next) => {
