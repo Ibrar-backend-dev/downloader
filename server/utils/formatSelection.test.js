@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { videoSelector, legacyVideoSelector, explicitVideoSelector } = require('./formatSelection');
+const { videoSelector, legacyVideoSelector, explicitVideoSelector, normalizeDurationSeconds } = require('./formatSelection');
 
 test('builds a merged selector for numeric video quality', () => {
   assert.equal(videoSelector('720'), 'bv*[height<=720]+ba/b[height<=720]/b');
@@ -19,6 +19,13 @@ test('preserves the legacy best selector', () => {
 
 test('builds a selector for a format returned by video info', () => {
   assert.equal(explicitVideoSelector('137'), '137+ba/137/b');
+});
+
+test('normalizes duration values into whole seconds', () => {
+  assert.equal(normalizeDurationSeconds(12.7), 13);
+  assert.equal(normalizeDurationSeconds('12.2'), 12);
+  assert.equal(normalizeDurationSeconds(null), null);
+  assert.equal(normalizeDurationSeconds(undefined), null);
 });
 
 test('rejects unsupported quality values', () => {

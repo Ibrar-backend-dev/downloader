@@ -6,7 +6,7 @@ const { getGenericDownloadError, isTransientFailure } = require('../utils/downlo
 const { createLogger } = require('../utils/logger');
 const { createTracer } = require('../utils/ytdlpTrace');
 const { spawnYtDlp } = require('../utils/ytdlpProcess');
-const { accessArgs } = require('../utils/ytdlpAccess');
+const { accessArgs, isTikTokUrl, isFacebookUrl } = require('../utils/ytdlpAccess');
 const { legacyVideoSelector, explicitVideoSelector } = require('../utils/formatSelection');
 const { isB2Configured, uploadFile } = require('../utils/b2Storage');
 const router = express.Router();
@@ -18,6 +18,29 @@ function publicBaseUrl(req) {
   const forwardedProto = req.get('x-forwarded-proto')?.split(',')[0].trim();
   const protocol = forwardedProto || req.protocol;
   return `${protocol}://${req.get('host')}`;
+}
+
+function detectPlatform(url = '') {
+  if (isTikTokUrl(url)) return 'tiktok';
+  if (isFacebookUrl(url)) return 'facebook';
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.includes('threads')) return 'threads';
+    if (host.includes('instagram')) return 'instagram';
+    if (host.includes('twitter')) return 'twitter';
+    if (host.includes('youtube')) return 'youtube';
+    return 'unknown';
+  } catch (_error) {
+    return 'unknown';
+  }
+}
+
+function inferTitleAndIdFromFilename(filename = '') {
+  const bare = path.basename(filename, path.extname(filename));
+  const match = bare.match(/\s*\[([^\]]+)\]/);
+  const id = match ? match[1] : null;
+  const title = bare.replace(/\s*\[[^\]]+\]/, '').trim();
+  return { title, id };
 }
 
 // TikTok rejects roughly a third of extraction attempts with a challenge that
@@ -33,6 +56,7 @@ router.post('/', async (req, res) => {
   try {
     const { url, format, formatId, quality, audioOnly, outputPath } = req.body;
     const io = req.app.get('socketio');
+    const platform = detectPlatform(url);
 
     log.info('request.received', {
       url,
@@ -46,14 +70,14 @@ router.post('/', async (req, res) => {
 
     if (!url) {
       log.warn('validate.rejected', { reason: 'missing-url' });
-      return res.status(400).json({ error: 'URL is required' });
+      return res.status(400).json({ success: false, stage: 'error', code: 'MISSING_URL', details: 'URL is required' });
     }
 
     // Basic URL validation - let yt-dlp handle specific format validation
     const urlPattern = /^https?:\/\/.+/i;
     if (!urlPattern.test(url)) {
       log.warn('validate.rejected', { reason: 'bad-url-format', url });
-      return res.status(400).json({ error: 'Invalid URL format. Please provide a valid HTTP/HTTPS URL.' });
+      return res.status(400).json({ success: false, stage: 'error', code: 'BAD_URL', details: 'Invalid URL format. Please provide a valid HTTP/HTTPS URL.' });
     }
 
     log.info('validate.passed', {
@@ -67,7 +91,7 @@ router.post('/', async (req, res) => {
 
     // Build yt-dlp command with better YouTube handling
     const args = [];
-    
+
     args.push(...(await accessArgs(url, log)));
 
     if (audioOnly) {
@@ -80,7 +104,7 @@ router.post('/', async (req, res) => {
         args.push('--merge-output-format', 'mp4');
       } catch (error) {
         if (error.code === 'INVALID_FORMAT_ID' || error.code === 'INVALID_QUALITY') {
-          return res.status(400).json({ error: error.message, code: error.code });
+          return res.status(400).json({ success: false, stage: 'error', code: error.code, details: error.message });
         }
         throw error;
       }
@@ -89,8 +113,6 @@ router.post('/', async (req, res) => {
     args.push('-o', path.join(downloadsDir, '%(title).80s [%(id)s].%(ext)s'));
     args.push('--no-playlist');
     args.push('--progress');
-    // One progress update per line instead of carriage-return rewrites, so the
-    // trace keeps every tick rather than a single overwritten line.
     args.push('--newline');
     if (process.env.YTDLP_VERBOSE === '1') args.push('--verbose');
     args.push(url);
@@ -103,7 +125,11 @@ router.post('/', async (req, res) => {
       status: 'starting',
       progress: 0,
       filename: '',
-      error: null
+      error: null,
+      platform,
+      storage: 'local',
+      fileSize: null,
+      downloadUrl: null,
     };
 
     downloadJobs.set(downloadId, downloadInfo);
@@ -156,8 +182,6 @@ router.post('/', async (req, res) => {
 
         if (state.destination) downloadInfo.filename = path.basename(state.destination);
 
-        // Trust the file on disk over the exit code: a zero exit with no output
-        // file is still a failure from the user's point of view.
         let fileSize = null;
         if (state.destination) {
           try {
@@ -195,82 +219,37 @@ router.post('/', async (req, res) => {
       });
     });
 
-    // Run attempts in the background; the client already has its 202-style ack
-    // and follows the job over the socket.
-    (async () => {
-      let result = null;
+    let result = null;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      result = await runAttempt(attempt);
+      if (result.ok) break;
 
-      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        result = await runAttempt(attempt);
-        if (result.ok) break;
-
-        const retryable = !result.spawnFailed && isTransientFailure(result.rawYtDlpError);
-        if (!retryable || attempt === MAX_ATTEMPTS) {
-          log.warn('retry.stopped', {
-            attempt,
-            reason: result.spawnFailed
-              ? 'yt-dlp could not be started'
-              : retryable
-                ? 'attempts exhausted'
-                : 'failure is not transient',
-          });
-          break;
-        }
-
-        log.warn('retry.scheduled', {
-          afterAttempt: attempt,
-          delayMs: RETRY_DELAY_MS,
-          because: result.diagnosis,
+      const retryable = !result.spawnFailed && isTransientFailure(result.rawYtDlpError);
+      if (!retryable || attempt === MAX_ATTEMPTS) {
+        log.warn('retry.stopped', {
+          attempt,
+          reason: result.spawnFailed
+            ? 'yt-dlp could not be started'
+            : retryable
+              ? 'attempts exhausted'
+              : 'failure is not transient',
         });
-        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+        break;
       }
 
-      if (result.ok) {
-        downloadInfo.status = 'storing';
-        downloadInfo.progress = 100;
-        downloadInfo.error = null;
-        downloadInfo.fileSize = result.fileSize;
-        downloadInfo.storage = 'local';
-        downloadInfo.downloadUrl = `${publicBaseUrl(req)}/api/download/file/${encodeURIComponent(downloadInfo.filename)}`;
+      log.warn('retry.scheduled', {
+        afterAttempt: attempt,
+        delayMs: RETRY_DELAY_MS,
+        because: result.diagnosis,
+      });
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+    }
 
-        if (isB2Configured() && downloadInfo.filename && result.fileSize > 0) {
-          const localFilePath = path.join(downloadsDir, downloadInfo.filename);
-          try {
-            const uploaded = await uploadFile({
-              filePath: localFilePath,
-              filename: downloadInfo.filename,
-              downloadId,
-              log,
-            });
-            if (uploaded.uploaded) {
-              downloadInfo.storage = 'b2';
-              downloadInfo.downloadUrl = uploaded.url;
-            }
-          } catch (storageError) {
-            log.warn('storage.b2.failed', {
-              code: storageError.Code || storageError.name,
-              message: storageError.message,
-              fallback: 'local',
-            });
-          }
-        } else if (!isB2Configured()) {
-          log.info('storage.local.selected', { reason: 'b2-not-configured' });
-        }
-
-        downloadInfo.status = 'completed';
-        io.emit('download-complete', downloadInfo);
-        log.info('download.completed', {
-          file: downloadInfo.filename,
-          fileSize: result.fileSize,
-          storage: downloadInfo.storage,
-          totalMs: log.elapsed(),
-        });
-        return;
-      }
-
+    if (!result.ok) {
       const genericError = getGenericDownloadError(url, result.rawYtDlpError, result.code);
       downloadInfo.status = 'error';
       downloadInfo.error = genericError;
+      downloadInfo.fileSize = result.fileSize || null;
       io.emit('download-error', downloadInfo);
 
       log.error('download.failed', {
@@ -289,20 +268,100 @@ router.post('/', async (req, res) => {
         lastLine: result.state.lastLine,
         userFacingError: genericError,
       });
-    })();
 
-    log.info('response.sent', { downloadId, status: 'accepted' });
-    res.json({
-      success: true,
-      downloadId,
-      message: 'Download started'
+      return res.status(500).json({
+        success: false,
+        stage: 'error',
+        code: result.code || 'YTDLP_FAILED',
+        details: genericError,
+        platform,
+        formatId: formatId || format || quality || null,
+        filename: downloadInfo.filename || null,
+        fileSize: result.fileSize || null,
+        storage: 'local',
+      });
+    }
+
+    // Success path: now only after yt-dlp completed cleanly.
+    downloadInfo.status = 'storing';
+    downloadInfo.progress = 100;
+    downloadInfo.error = null;
+    downloadInfo.fileSize = result.fileSize;
+    downloadInfo.storage = 'local';
+    downloadInfo.downloadUrl = `${publicBaseUrl(req)}/api/download/file/${encodeURIComponent(downloadInfo.filename)}`;
+
+    if (isB2Configured() && downloadInfo.filename && result.fileSize > 0) {
+      const localFilePath = path.join(downloadsDir, downloadInfo.filename);
+      try {
+        const uploaded = await uploadFile({
+          filePath: localFilePath,
+          filename: downloadInfo.filename,
+          downloadId,
+          log,
+        });
+        if (uploaded.uploaded) {
+          downloadInfo.storage = 'b2';
+          downloadInfo.downloadUrl = uploaded.url;
+        }
+      } catch (storageError) {
+        log.warn('storage.b2.failed', {
+          code: storageError.Code || storageError.name,
+          message: storageError.message,
+          fallback: 'local',
+        });
+      }
+    } else if (!isB2Configured()) {
+      log.info('storage.local.selected', { reason: 'b2-not-configured' });
+    }
+
+    // If file size ended up zero, keep the route synchronous but fail cleanly.
+    if (!downloadInfo.filename || !downloadInfo.downloadUrl || !result.fileSize || result.fileSize <= 0) {
+      return res.status(500).json({
+        success: false,
+        stage: 'error',
+        code: 'ZERO_BYTE_OR_MISSING_FILE',
+        details: 'Download did not produce a usable non-empty file.',
+        platform,
+        formatId: formatId || format || quality || null,
+        filename: downloadInfo.filename || null,
+        fileSize: result.fileSize || null,
+        storage: downloadInfo.storage,
+      });
+    }
+
+    const { title, id } = inferTitleAndIdFromFilename(downloadInfo.filename);
+    downloadInfo.title = title;
+    downloadInfo.id = id;
+    downloadInfo.status = 'completed';
+    io.emit('download-complete', downloadInfo);
+
+    log.info('download.completed', {
+      file: downloadInfo.filename,
+      fileSize: result.fileSize,
+      storage: downloadInfo.storage,
+      totalMs: log.elapsed(),
     });
 
+    log.info('response.sent', { downloadId, status: 'completed' });
+    return res.json({
+      success: true,
+      stage: 'completed',
+      platform,
+      id,
+      title,
+      formatId: formatId || format || quality || null,
+      filename: downloadInfo.filename,
+      fileSize: result.fileSize,
+      storage: downloadInfo.storage,
+      downloadUrl: downloadInfo.downloadUrl,
+    });
   } catch (error) {
     log.error('route.exception', { message: error.message, stack: error.stack });
-    res.status(500).json({
-      error: 'Download failed',
-      details: error.message
+    return res.status(500).json({
+      success: false,
+      stage: 'error',
+      code: 'DOWNLOAD_EXCEPTION',
+      details: error.message,
     });
   }
 });

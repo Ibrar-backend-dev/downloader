@@ -84,10 +84,9 @@ a one-hour signed B2 download URL. B2 credentials are never sent to clients.
 ## API Endpoints
 
 ### Public endpoints
-- `GET /api/info?url=<video_url>` - Inspect a video and return metadata and available formats, including sizes when yt-dlp provides them.
-- `POST /api/download` - Download the selected option. Send `{ "url": "...", "formatId": "137" }` after calling `/api/info`.
-- `GET /api/download/status/:downloadId` - Poll the current download status and receive the B2 or local `downloadUrl` after completion.
-- `GET /api/download/file/:filename` - Download a completed file after receiving its `downloadUrl` in the `download-complete` Socket.IO event.
+- `GET /api/info?url=<video_url>` - Inspect a video and return metadata and the normalized `formats` list without downloading the media.
+- `POST /api/download` - Download the selected format synchronously. Send `{ "url": "...", "formatId": "137" }` after calling `/api/info`, and the same HTTP response returns the completed `downloadUrl`.
+- `GET /api/download/file/:filename` - Local fallback file serving only; the Android client should use the final `downloadUrl` from the synchronous `POST /api/download` response.
 
 The old format, resolve, stream, file-list, and file-delete route registrations are disabled in `server/index.js`. Their route files remain in the repository for possible later recovery.
 
@@ -103,9 +102,7 @@ The old format, resolve, stream, file-list, and file-delete route registrations 
 - `download-complete` - Download completed
 - `download-error` - Download error occurred
 
-The `POST /api/download` response only acknowledges that the background job
-started. Connect to Socket.IO before starting the job, then match the
-`download-complete` event's `id` with the response's `downloadId`:
+Socket.IO progress remains optional and must not be used as the primary response contract. The authoritative response is the final synchronous `POST /api/download` HTTP JSON object:
 
 ```js
 const response = await fetch('http://localhost:5000/api/download', {
@@ -113,17 +110,17 @@ const response = await fetch('http://localhost:5000/api/download', {
    headers: { 'Content-Type': 'application/json' },
    body: JSON.stringify({ url, formatId: '137' }),
 });
-const { downloadId } = await response.json();
+const payload = await response.json();
 
-socket.on('download-complete', (download) => {
-   if (download.id !== downloadId) return;
+if (!payload.success || payload.stage !== 'completed') {
+  throw new Error(payload.details || payload.error || 'Download failed');
+}
 
-   const link = document.createElement('a');
-   link.href = `http://localhost:5000${download.downloadUrl}`;
-   link.download = download.filename;
-   link.textContent = 'Download file';
-   document.body.appendChild(link);
-});
+const link = document.createElement('a');
+link.href = payload.downloadUrl;
+link.download = payload.filename;
+link.textContent = 'Download file';
+document.body.appendChild(link);
 ```
 
 ## Configuration

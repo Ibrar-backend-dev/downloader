@@ -3,6 +3,7 @@ const { createLogger } = require('../utils/logger');
 const { spawnYtDlp } = require('../utils/ytdlpProcess');
 const { accessArgs } = require('../utils/ytdlpAccess');
 const { isTransientFailure } = require('../utils/downloadError');
+const { normalizeDurationSeconds } = require('../utils/formatSelection');
 const router = express.Router();
 
 let infoCounter = 0;
@@ -146,51 +147,30 @@ router.get('/', async (req, res) => {
       });
     }
 
-    // Extract relevant information
-    const formats = videoInfo.formats ? videoInfo.formats.map(format => ({
-      format_id: format.format_id,
-      ext: format.ext,
-      quality: format.quality,
-      filesize: format.filesize,
-      filesize_approx: format.filesize_approx,
-      tbr: format.tbr,
-      width: format.width,
-      height: format.height,
-      fps: format.fps,
-      vcodec: format.vcodec,
-      acodec: format.acodec,
-      format_note: format.format_note,
-      has_video: format.vcodec && format.vcodec !== 'none',
-      has_audio: format.acodec && format.acodec !== 'none'
-    })) : [];
+    const formats = (videoInfo.formats || [])
+      .filter((format) => format && format.format_id && format.ext === 'mp4' && format.vcodec && format.vcodec !== 'none')
+      .map((format) => {
+        const rawFormatId = String(format.format_id || '').trim();
+        const numericFormatId = Number.parseInt(rawFormatId, 10);
+
+        return {
+          formatId: Number.isFinite(numericFormatId) ? numericFormatId : rawFormatId,
+          resolution: format.height ? `${format.height}p` : (format.format_note || 'unknown'),
+          ext: format.ext,
+          hasVideo: true,
+          hasAudio: Boolean(format.acodec && format.acodec !== 'none'),
+        };
+      })
+      .filter((entry) => entry.resolution && entry.resolution !== 'unknown')
+      .sort((a, b) => Number.parseInt(a.resolution, 10) - Number.parseInt(b.resolution, 10));
 
     const info = {
       id: videoInfo.id,
+      platform: videoInfo.extractor || 'unknown',
       title: videoInfo.title,
-      resolutions: Array.from(
-        formats
-          .filter(format => format.has_video && format.height && format.ext === 'mp4')
-          .reduce((bestByHeight, format) => {
-            const current = bestByHeight.get(format.height);
-            const formatScore = (Number(format.tbr) || 0) * 1000
-              + (format.has_audio ? 1 : 0);
-            const currentScore = current
-              ? (Number(current.tbr) || 0) * 1000
-                + (current.has_audio ? 1 : 0)
-              : -1;
-
-            if (!current || formatScore > currentScore) {
-              bestByHeight.set(format.height, format);
-            }
-            return bestByHeight;
-          }, new Map())
-          .values()
-      ).map(format => ({
-          format_id: format.format_id,
-          resolution: `${format.height}p`,
-          ext: format.ext
-        }))
-        .sort((a, b) => Number.parseInt(a.resolution, 10) - Number.parseInt(b.resolution, 10))
+      thumbnail: videoInfo.thumbnail,
+      duration: normalizeDurationSeconds(videoInfo.duration),
+      formats,
     };
 
     log.info('info.resolved', {

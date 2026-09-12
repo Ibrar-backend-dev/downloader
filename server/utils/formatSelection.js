@@ -1,6 +1,15 @@
 const NUMERIC_QUALITIES = new Set(['2160', '1440', '1080', '720', '480', '360']);
 const VIDEO_QUALITIES = new Set(['best', 'worst', ...NUMERIC_QUALITIES]);
 
+function normalizeDurationSeconds(duration) {
+  if (duration === null || duration === undefined || duration === '') return null;
+
+  const numericDuration = Number(duration);
+  if (!Number.isFinite(numericDuration)) return null;
+
+  return Math.round(numericDuration);
+}
+
 function videoSelector(quality = 'best') {
   const value = String(quality || 'best');
   if (!VIDEO_QUALITIES.has(value)) {
@@ -40,4 +49,4 @@ function explicitVideoSelector(formatId) {
   return `${value}+ba/${value}/b`;
 }
 
-module.exports = { videoSelector, legacyVideoSelector, explicitVideoSelector };
+module.exports = { videoSelector, legacyVideoSelector, explicitVideoSelector, normalizeDurationSeconds };

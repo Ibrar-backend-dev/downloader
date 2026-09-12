@@ -24,6 +24,20 @@
         "base_url": "http://localhost:5000",
         "video_url": "https://www.youtube.com/watch?v=example",
         "format_id": "137",
+        "platform": "",
+        "media_id": "",
+        "title": "",
+        "thumbnail": "",
+        "download_stage": "",
+        "download_success": "",
+        "download_platform": "",
+        "download_media_id": "",
+        "download_title": "",
+        "download_format_id": "",
+        "download_filename": "",
+        "download_file_size": "",
+        "download_storage": "",
+        "download_url": "",
         "completed_filename": "video title [abc123].mp4",
         "download_id": ""
       },
@@ -73,6 +87,9 @@
       "settingEncodeUrl": true,
       "settingRebuildPath": true,
       "settingFollowRedirects": "global",
+      "scripts": {
+        "afterResponse": "const body = insomnia.response.json();\nif (body && Array.isArray(body.formats) && body.formats.length) {\n  const first = body.formats.find((f) => f.formatId) || body.formats[0];\n  if (first && first.formatId) {\n    insomnia.environment.set('format_id', String(first.formatId));\n  }\n}\nif (body && body.platform) {\n  insomnia.environment.set('platform', String(body.platform));\n}\nif (body && body.id) {\n  insomnia.environment.set('media_id', String(body.id));\n}\nif (body && body.title) {\n  insomnia.environment.set('title', String(body.title));\n}\nif (body && body.thumbnail) {\n  insomnia.environment.set('thumbnail', String(body.thumbnail));\n}"
+      },
       "_type": "request",
       "url": "{{ _.base_url }}/api/info"
     },
@@ -105,33 +122,10 @@
       "settingRebuildPath": true,
       "settingFollowRedirects": "global",
       "scripts": {
-        "afterResponse": "const body = insomnia.response.json();\nif (body.downloadId) {\n  insomnia.environment.set('download_id', body.downloadId);\n}"
+        "afterResponse": "const body = insomnia.response.json();\nif (!body) return;\nif (typeof body.success !== 'undefined') {\n  insomnia.environment.set('download_success', String(body.success));\n}\nif (body.stage) {\n  insomnia.environment.set('download_stage', String(body.stage));\n}\nif (body.platform) {\n  insomnia.environment.set('download_platform', String(body.platform));\n}\nif (body.id) {\n  insomnia.environment.set('download_media_id', String(body.id));\n}\nif (body.title) {\n  insomnia.environment.set('download_title', String(body.title));\n}\nif (body.formatId) {\n  insomnia.environment.set('download_format_id', String(body.formatId));\n}\nif (body.filename) {\n  insomnia.environment.set('download_filename', String(body.filename));\n  insomnia.environment.set('completed_filename', String(body.filename));\n}\nif (typeof body.fileSize !== 'undefined') {\n  insomnia.environment.set('download_file_size', String(body.fileSize));\n}\nif (body.storage) {\n  insomnia.environment.set('download_storage', String(body.storage));\n}\nif (body.downloadUrl) {\n  insomnia.environment.set('download_url', String(body.downloadUrl));\n}"
       },
       "_type": "request",
       "url": "{{ _.base_url }}/api/download"
-    },
-    {
-      "_id": "req_downloader_status",
-      "parentId": "fld_downloader_public",
-      "modified": 1788825600000,
-      "created": 1788825600000,
-      "name": "Get download status",
-      "description": "Polls the download job and returns the B2 or local downloadUrl after completion.",
-      "method": "GET",
-      "body": {},
-      "parameters": [],
-      "headers": [],
-      "authentication": {},
-      "metaSortKey": -850,
-      "isPrivate": false,
-      "settingStoreCookies": true,
-      "settingSendCookies": true,
-      "settingDisableRenderRequestBody": false,
-      "settingEncodeUrl": true,
-      "settingRebuildPath": true,
-      "settingFollowRedirects": "global",
-      "_type": "request",
-      "url": "{{ _.base_url }}/api/download/status/{{ _.download_id }}"
     },
     {
       "_id": "req_downloader_completed_file",
