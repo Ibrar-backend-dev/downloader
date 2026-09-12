@@ -37,6 +37,7 @@ npm-debug.log*
 # Editor directories and files
 .idea/
 .vscode/
+insomnia-export.json
 *.swp
 *.swo
 .DS_Store

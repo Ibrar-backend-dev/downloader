@@ -61,11 +61,32 @@ npm start
 
 The API listens on port `5000` by default.
 
+### Persistent storage with Backblaze B2
+
+Downloads use the local `downloads/` directory by default. When all B2
+variables below are configured, completed files are uploaded to B2 and the
+`download-complete` event contains a B2 URL. If B2 is unavailable or the
+upload fails, the event falls back to the local file URL.
+
+Set these variables in Railway or the server environment:
+
+```text
+B2_KEY_ID=...
+B2_APPLICATION_KEY=...
+B2_BUCKET=...
+B2_REGION=us-west-004
+B2_ENDPOINT=https://s3.us-west-004.backblazeb2.com
+```
+
+Optionally set `B2_PUBLIC_URL` for a public bucket. Without it, the API emits
+a one-hour signed B2 download URL. B2 credentials are never sent to clients.
+
 ## API Endpoints
 
 ### Public endpoints
 - `GET /api/info?url=<video_url>` - Inspect a video and return metadata and available formats, including sizes when yt-dlp provides them.
 - `POST /api/download` - Download the selected option. Send `{ "url": "...", "formatId": "137" }` after calling `/api/info`.
+- `GET /api/download/status/:downloadId` - Poll the current download status and receive the B2 or local `downloadUrl` after completion.
 - `GET /api/download/file/:filename` - Download a completed file after receiving its `downloadUrl` in the `download-complete` Socket.IO event.
 
 The old format, resolve, stream, file-list, and file-delete route registrations are disabled in `server/index.js`. Their route files remain in the repository for possible later recovery.
@@ -114,7 +135,12 @@ Set these variables in the shell before starting the server:
 ```powershell
 $env:PORT = "5000"
 $env:NODE_ENV = "development"
+$env:PUBLIC_BASE_URL = "http://localhost:5000"
 ```
+
+Set `PUBLIC_BASE_URL` to the deployed API origin, for example
+`https://production-01.up.railway.app`. It is used when local fallback storage
+returns an absolute `downloadUrl`; B2 URLs are returned directly.
 
 For TikTok videos, TikTok may require a browser session to pass its anti-bot check. Set one of these before starting the server:
 

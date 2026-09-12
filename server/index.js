@@ -10,6 +10,7 @@ const { spawn } = require('child_process');
 const http = require('http');
 const socketIo = require('socket.io');
 const { createLogger } = require('./utils/logger');
+const { isB2Configured } = require('./utils/b2Storage');
 
 const app = express();
 const server = http.createServer(app);
@@ -41,7 +42,7 @@ const infoRoutes = require('./routes/info');
 // still contain their older handlers for rollback/reference, but these mounts
 // intentionally do not expose those extra endpoints.
 app.use('/api/download', (req, res, next) => {
-  if (req.path !== '/' && !/^\/file\/[^/]+$/.test(req.path)) {
+  if (req.path !== '/' && !/^\/(?:file|status)\/[^/]+$/.test(req.path)) {
     return res.status(404).json({ error: 'Endpoint not found' });
   }
   downloadRoutes(req, res, next);
@@ -102,6 +103,12 @@ function logStartupEnvironment() {
     verbose: process.env.YTDLP_VERBOSE === '1',
     ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
     ffmpegLocation: process.env.FFMPEG_LOCATION || null,
+  });
+
+  log.info('storage.config', {
+    provider: isB2Configured() ? 'b2-with-local-fallback' : 'local',
+    b2Bucket: process.env.B2_BUCKET || null,
+    b2Endpoint: process.env.B2_ENDPOINT || null,
   });
 
   probe('yt-dlp', ['--version'], (version, error) => {

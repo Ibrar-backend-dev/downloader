@@ -73,8 +73,15 @@ function parseLine(line) {
     };
   }
 
-  if (/has already been downloaded/.test(line)) {
-    return { type: 'event', stage: 'download.finished', name: 'download.cached', message: line };
+  const cached = line.match(/^\[download\]\s+(.+?)\s+has already been downloaded$/);
+  if (cached) {
+    return {
+      type: 'event',
+      stage: 'download.finished',
+      name: 'download.cached',
+      destination: cached[1],
+      message: line,
+    };
   }
 
   const selected = line.match(/^\[info\]\s+(.+?):\s+Downloading\s+(\d+)\s+format\(s\):\s*(.+)$/);

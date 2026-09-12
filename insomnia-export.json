@@ -24,7 +24,8 @@
         "base_url": "http://localhost:5000",
         "video_url": "https://www.youtube.com/watch?v=example",
         "format_id": "137",
-        "completed_filename": "video title [abc123].mp4"
+        "completed_filename": "video title [abc123].mp4",
+        "download_id": ""
       },
       "dataPropertyOrder": null,
       "color": null,
@@ -103,8 +104,34 @@
       "settingEncodeUrl": true,
       "settingRebuildPath": true,
       "settingFollowRedirects": "global",
+      "scripts": {
+        "afterResponse": "const body = insomnia.response.json();\nif (body.downloadId) {\n  insomnia.environment.set('download_id', body.downloadId);\n}"
+      },
       "_type": "request",
       "url": "{{ _.base_url }}/api/download"
+    },
+    {
+      "_id": "req_downloader_status",
+      "parentId": "fld_downloader_public",
+      "modified": 1788825600000,
+      "created": 1788825600000,
+      "name": "Get download status",
+      "description": "Polls the download job and returns the B2 or local downloadUrl after completion.",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -850,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request",
+      "url": "{{ _.base_url }}/api/download/status/{{ _.download_id }}"
     },
     {
       "_id": "req_downloader_completed_file",

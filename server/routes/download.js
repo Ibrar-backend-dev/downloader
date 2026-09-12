@@ -8,7 +8,17 @@ const { createTracer } = require('../utils/ytdlpTrace');
 const { spawnYtDlp } = require('../utils/ytdlpProcess');
 const { accessArgs } = require('../utils/ytdlpAccess');
 const { legacyVideoSelector, explicitVideoSelector } = require('../utils/formatSelection');
+const { isB2Configured, uploadFile } = require('../utils/b2Storage');
 const router = express.Router();
+const downloadJobs = new Map();
+const JOB_RETENTION_MS = 60 * 60 * 1000;
+
+function publicBaseUrl(req) {
+  if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/$/, '');
+  const forwardedProto = req.get('x-forwarded-proto')?.split(',')[0].trim();
+  const protocol = forwardedProto || req.protocol;
+  return `${protocol}://${req.get('host')}`;
+}
 
 // TikTok rejects roughly a third of extraction attempts with a challenge that
 // clears on a retry, so a single attempt is not a fair test of availability.
@@ -95,6 +105,9 @@ router.post('/', async (req, res) => {
       filename: '',
       error: null
     };
+
+    downloadJobs.set(downloadId, downloadInfo);
+    setTimeout(() => downloadJobs.delete(downloadId), JOB_RETENTION_MS).unref();
 
     io.emit('download-start', downloadInfo);
 
@@ -213,14 +226,43 @@ router.post('/', async (req, res) => {
       }
 
       if (result.ok) {
-        downloadInfo.status = 'completed';
+        downloadInfo.status = 'storing';
         downloadInfo.progress = 100;
         downloadInfo.error = null;
-        downloadInfo.downloadUrl = `/api/download/file/${encodeURIComponent(downloadInfo.filename)}`;
+        downloadInfo.fileSize = result.fileSize;
+        downloadInfo.storage = 'local';
+        downloadInfo.downloadUrl = `${publicBaseUrl(req)}/api/download/file/${encodeURIComponent(downloadInfo.filename)}`;
+
+        if (isB2Configured() && downloadInfo.filename && result.fileSize > 0) {
+          const localFilePath = path.join(downloadsDir, downloadInfo.filename);
+          try {
+            const uploaded = await uploadFile({
+              filePath: localFilePath,
+              filename: downloadInfo.filename,
+              downloadId,
+              log,
+            });
+            if (uploaded.uploaded) {
+              downloadInfo.storage = 'b2';
+              downloadInfo.downloadUrl = uploaded.url;
+            }
+          } catch (storageError) {
+            log.warn('storage.b2.failed', {
+              code: storageError.Code || storageError.name,
+              message: storageError.message,
+              fallback: 'local',
+            });
+          }
+        } else if (!isB2Configured()) {
+          log.info('storage.local.selected', { reason: 'b2-not-configured' });
+        }
+
+        downloadInfo.status = 'completed';
         io.emit('download-complete', downloadInfo);
         log.info('download.completed', {
           file: downloadInfo.filename,
           fileSize: result.fileSize,
+          storage: downloadInfo.storage,
           totalMs: log.elapsed(),
         });
         return;
@@ -263,6 +305,16 @@ router.post('/', async (req, res) => {
       details: error.message
     });
   }
+});
+
+// GET /api/download/status/:downloadId - Get the current job and final file URL
+router.get('/status/:downloadId', (req, res) => {
+  const download = downloadJobs.get(req.params.downloadId);
+  if (!download) {
+    return res.status(404).json({ error: 'Download job not found' });
+  }
+
+  res.json(download);
 });
 
 // GET /api/download/file/:filename - Download a completed file
