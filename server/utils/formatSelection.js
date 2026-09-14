@@ -49,4 +49,62 @@ function explicitVideoSelector(formatId) {
   return `${value}+ba/${value}/b`;
 }
 
-module.exports = { videoSelector, legacyVideoSelector, explicitVideoSelector, normalizeDurationSeconds };
+function dedupeFormatsByResolution(formats = []) {
+  if (!Array.isArray(formats)) return [];
+
+  const byResolution = new Map();
+  for (const format of formats) {
+    const key = String(format?.resolution || '').trim();
+    if (!key) continue;
+
+    const existing = byResolution.get(key);
+    if (!existing) {
+      byResolution.set(key, format);
+      continue;
+    }
+
+    const existingBytes = Number(existing?.sizeBytes ?? 0);
+    const candidateBytes = Number(format?.sizeBytes ?? 0);
+    const existingHasBytes = Number.isFinite(existingBytes) && existingBytes > 0;
+    const candidateHasBytes = Number.isFinite(candidateBytes) && candidateBytes > 0;
+
+    if (!existingHasBytes && candidateHasBytes) {
+      byResolution.set(key, format);
+    }
+  }
+
+  return Array.from(byResolution.values());
+}
+
+function filterFormatsByMinimumResolution(formats = [], minHeight = 480) {
+  if (!Array.isArray(formats)) return [];
+
+  const minimum = Number(minHeight);
+  if (!Number.isFinite(minimum)) return formats;
+
+  return formats.filter((format) => {
+    const height = Number.parseInt(String(format?.resolution || '').replace(/p$/i, ''), 10);
+    return Number.isFinite(height) && height >= minimum;
+  });
+}
+
+function formatSizeMb(format = {}) {
+  if (!format || typeof format !== 'object') return null;
+
+  const explicitBytes = Number(format.filesize ?? format.filesize_approx ?? 0);
+  if (Number.isFinite(explicitBytes) && explicitBytes > 0) {
+    return Number((explicitBytes / 1024 / 1024).toFixed(2));
+  }
+
+  return null;
+}
+
+module.exports = {
+  videoSelector,
+  legacyVideoSelector,
+  explicitVideoSelector,
+  normalizeDurationSeconds,
+  dedupeFormatsByResolution,
+  filterFormatsByMinimumResolution,
+  formatSizeMb,
+};

@@ -3,7 +3,7 @@ const { createLogger } = require('../utils/logger');
 const { spawnYtDlp } = require('../utils/ytdlpProcess');
 const { accessArgs } = require('../utils/ytdlpAccess');
 const { isTransientFailure } = require('../utils/downloadError');
-const { normalizeDurationSeconds } = require('../utils/formatSelection');
+const { normalizeDurationSeconds, dedupeFormatsByResolution, filterFormatsByMinimumResolution, formatSizeMb } = require('../utils/formatSelection');
 const router = express.Router();
 
 let infoCounter = 0;
@@ -147,22 +147,31 @@ router.get('/', async (req, res) => {
       });
     }
 
-    const formats = (videoInfo.formats || [])
-      .filter((format) => format && format.format_id && format.ext === 'mp4' && format.vcodec && format.vcodec !== 'none')
-      .map((format) => {
-        const rawFormatId = String(format.format_id || '').trim();
-        const numericFormatId = Number.parseInt(rawFormatId, 10);
+    const formats = filterFormatsByMinimumResolution(
+      dedupeFormatsByResolution(
+        (videoInfo.formats || [])
+          .filter((format) => format && format.format_id && format.ext === 'mp4' && format.vcodec && format.vcodec !== 'none')
+          .map((format) => {
+            const rawFormatId = String(format.format_id || '').trim();
+            const numericFormatId = Number.parseInt(rawFormatId, 10);
+            const sizeMb = formatSizeMb(format);
+            const sizeBytes = Number(format.filesize ?? format.filesize_approx ?? 0);
 
-        return {
-          formatId: Number.isFinite(numericFormatId) ? numericFormatId : rawFormatId,
-          resolution: format.height ? `${format.height}p` : (format.format_note || 'unknown'),
-          ext: format.ext,
-          hasVideo: true,
-          hasAudio: Boolean(format.acodec && format.acodec !== 'none'),
-        };
-      })
-      .filter((entry) => entry.resolution && entry.resolution !== 'unknown')
-      .sort((a, b) => Number.parseInt(a.resolution, 10) - Number.parseInt(b.resolution, 10));
+            return {
+              formatId: Number.isFinite(numericFormatId) ? numericFormatId : rawFormatId,
+              resolution: format.height ? `${format.height}p` : (format.format_note || 'unknown'),
+              ext: format.ext,
+              hasVideo: true,
+              hasAudio: Boolean(format.acodec && format.acodec !== 'none'),
+              sizeMb,
+              sizeBytes: Number.isFinite(sizeBytes) && sizeBytes > 0 ? sizeBytes : null,
+            };
+          })
+          .filter((entry) => entry.resolution && entry.resolution !== 'unknown')
+          .sort((a, b) => Number.parseInt(a.resolution, 10) - Number.parseInt(b.resolution, 10))
+      ),
+      480
+    ).map(({ sizeBytes, ...entry }) => entry);
 
     const info = {
       id: videoInfo.id,
